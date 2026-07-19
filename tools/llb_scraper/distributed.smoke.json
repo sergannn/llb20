@@ -1,0 +1,41 @@
+{
+  "remote_dir": "/root/llb_mobile_scraper",
+  "workers": [
+    {
+      "name": "local_smoke",
+      "ssh": null,
+      "db": "data/llb_smoke_local.sqlite3",
+      "player_start_page": 0,
+      "player_pages": 1,
+      "player_details": 2,
+      "tournament_start_page": 0,
+      "tournament_pages": 1,
+      "tournament_details": 2,
+      "competitions": 1
+    },
+    {
+      "name": "postagents_smoke",
+      "ssh": "root@77.222.46.176",
+      "db": "data/llb_smoke_postagents.sqlite3",
+      "player_start_page": 1,
+      "player_pages": 1,
+      "player_details": 2,
+      "tournament_start_page": 1,
+      "tournament_pages": 1,
+      "tournament_details": 2,
+      "competitions": 1
+    },
+    {
+      "name": "panfilius_smoke",
+      "ssh": "root@77.222.47.218",
+      "db": "data/llb_smoke_panfilius.sqlite3",
+      "player_start_page": 2,
+      "player_pages": 1,
+      "player_details": 2,
+      "tournament_start_page": 2,
+      "tournament_pages": 1,
+      "tournament_details": 2,
+      "competitions": 1
+    }
+  ]
+}

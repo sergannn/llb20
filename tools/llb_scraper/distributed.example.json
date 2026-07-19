@@ -1,0 +1,41 @@
+{
+  "remote_dir": "~/llb_mobile_scraper",
+  "workers": [
+    {
+      "name": "local",
+      "ssh": null,
+      "db": "data/llb_local.sqlite3",
+      "player_start_page": 0,
+      "player_pages": 506,
+      "player_details": 25300,
+      "tournament_start_page": 0,
+      "tournament_pages": 699,
+      "tournament_details": 13980,
+      "competitions": 13980
+    },
+    {
+      "name": "avert",
+      "ssh": "sergann@avert.local",
+      "db": "data/llb_avert.sqlite3",
+      "player_start_page": 506,
+      "player_pages": 506,
+      "player_details": 25300,
+      "tournament_start_page": 699,
+      "tournament_pages": 699,
+      "tournament_details": 13980,
+      "competitions": 13980
+    },
+    {
+      "name": "macbook",
+      "ssh": "ser@192.168.0.114",
+      "db": "data/llb_macbook.sqlite3",
+      "player_start_page": 1012,
+      "player_pages": 506,
+      "player_details": 25300,
+      "tournament_start_page": 1398,
+      "tournament_pages": 700,
+      "tournament_details": 13980,
+      "competitions": 13980
+    }
+  ]
+}

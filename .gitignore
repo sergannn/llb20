@@ -1,0 +1,77 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
+
+# IntelliJ related
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# The .vscode folder contains launch configuration and tasks you configure in
+# VS Code which you may wish to be included in version control, so this line
+# is commented out by default.
+#.vscode/
+
+# Flutter/Dart/Pub related
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/build/
+build
+/coverage/
+
+# Symbolication related
+app.*.symbols
+
+# Obfuscation related
+app.*.map.json
+
+# Android Studio will place build artifacts here
+/android/app/debug
+/android/app/profile
+/android/app/release
+
+# Local scraper output
+data/
+data/*.sqlite3
+data/*.sqlite3-*
+data/*.db
+data/*.db-*
+data/**/*.sqlite3
+data/**/*.sqlite3-*
+data/**/*.db
+data/**/*.db-*
+cookies*.txt
+data/*cookies*.txt
+data/**/*cookies*.txt
+tools/llb_scraper/distributed.servers.json
+
+# Local virtualenvs and caches
+.venv*/
+**/__pycache__/
+
+# Release artifacts and signing material
+*.ipa
+*.pkg
+*.app
+*.dSYM.zip
+*.mobileprovision
+*.cer
+*.p12
+*.certSigningRequest
+ios/fastlane/*.p8
+**/fastlane/report.xml
