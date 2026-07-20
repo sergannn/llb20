@@ -236,6 +236,7 @@ class Tournament {
     required this.bracketUrl,
     required this.players,
     required this.matches,
+    this.media = const [],
   });
 
   final String id;
@@ -252,6 +253,7 @@ class Tournament {
   final String bracketUrl;
   final List<Player> players;
   final List<MatchInfo> matches;
+  final List<TournamentMedia> media;
 
   DateTime? get startsAt {
     final match = RegExp(r'(\d{2})\.(\d{2})\.(\d{2,4})').firstMatch(dateLabel);
@@ -273,6 +275,7 @@ class Tournament {
     int? matchesCount,
     List<Player>? players,
     List<MatchInfo>? matches,
+    List<TournamentMedia>? media,
   }) {
     return Tournament(
       id: id,
@@ -289,6 +292,7 @@ class Tournament {
       bracketUrl: bracketUrl,
       players: players ?? this.players,
       matches: matches ?? this.matches,
+      media: media ?? this.media,
     );
   }
 
@@ -309,6 +313,47 @@ class Tournament {
   bool matchesDiscipline(DisciplineFilter filter) {
     return filter.matches('$title $discipline $level');
   }
+}
+
+enum TournamentMediaKind {
+  photo('photo', 'Фото'),
+  video('video', 'Видео');
+
+  const TournamentMediaKind(this.storageKey, this.label);
+
+  final String storageKey;
+  final String label;
+
+  static TournamentMediaKind fromStorage(String value) {
+    return switch (value.toLowerCase()) {
+      'video' => TournamentMediaKind.video,
+      _ => TournamentMediaKind.photo,
+    };
+  }
+}
+
+class TournamentMedia {
+  const TournamentMedia({
+    required this.id,
+    required this.tournamentId,
+    required this.kind,
+    required this.url,
+    required this.createdAt,
+    this.title = '',
+    this.mimeType = '',
+    this.uploadedBy = '',
+  });
+
+  final String id;
+  final String tournamentId;
+  final TournamentMediaKind kind;
+  final String url;
+  final String createdAt;
+  final String title;
+  final String mimeType;
+  final String uploadedBy;
+
+  bool get isVideo => kind == TournamentMediaKind.video;
 }
 
 class VideoStream {

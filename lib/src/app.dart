@@ -1,14 +1,15 @@
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
+import 'app_theme.dart';
 import 'llb_auth.dart';
 import 'models.dart';
 import 'repositories.dart';
+import 'tournament_media_section.dart';
 
 class LlbApp extends StatelessWidget {
   const LlbApp({super.key, this.repository});
@@ -17,85 +18,11 @@ class LlbApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const baize = Color(0xff0f5b46);
-    const wine = Color(0xff8f243b);
-    const felt = Color(0xfff3f5ee);
-    const border = Color(0xffdce2d6);
-
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'LLB',
-      builder: (context, child) {
-        final media = MediaQuery.of(context);
-        final scale = math.min(media.textScaler.scale(1), 1.08);
-        return MediaQuery(
-          data: media.copyWith(textScaler: TextScaler.linear(scale)),
-          child: child ?? const SizedBox.shrink(),
-        );
-      },
-      theme: ThemeData(
-        useMaterial3: true,
-        colorScheme:
-            ColorScheme.fromSeed(
-              seedColor: baize,
-              brightness: Brightness.light,
-            ).copyWith(
-              primary: baize,
-              secondary: wine,
-              tertiary: const Color(0xffc79a2f),
-              surface: const Color(0xfffffff9),
-              surfaceContainerHighest: const Color(0xffe7ece3),
-              outline: const Color(0xff76847a),
-            ),
-        scaffoldBackgroundColor: felt,
-        cardTheme: CardThemeData(
-          color: const Color(0xfffffff9),
-          elevation: 0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-            side: const BorderSide(color: border),
-          ),
-        ),
-        appBarTheme: const AppBarTheme(
-          centerTitle: true,
-          backgroundColor: felt,
-          scrolledUnderElevation: 0,
-          titleTextStyle: TextStyle(
-            color: Color(0xff17201b),
-            fontSize: 24,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-        navigationBarTheme: NavigationBarThemeData(
-          height: 76,
-          indicatorColor: const Color(0xffd2f3e3),
-          labelTextStyle: WidgetStateProperty.resolveWith((states) {
-            return TextStyle(
-              fontSize: 15,
-              fontWeight: states.contains(WidgetState.selected)
-                  ? FontWeight.w700
-                  : FontWeight.w500,
-              letterSpacing: 0,
-            );
-          }),
-        ),
-        inputDecorationTheme: InputDecorationTheme(
-          filled: true,
-          fillColor: const Color(0xfffffff9),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: const BorderSide(color: border),
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: const BorderSide(color: border),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: const BorderSide(color: baize, width: 1.4),
-          ),
-        ),
-      ),
+      builder: LlbAppTheme.mediaQueryBuilder,
+      theme: LlbAppTheme.light(),
       home: LeagueHomePage(repository: repository),
     );
   }
@@ -876,9 +803,21 @@ class _TournamentsPageState extends State<_TournamentsPage> {
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-            child: _TournamentTabBar(
-              tabs: _tabs,
-              tournaments: visibleTournaments,
+            child: Row(
+              children: [
+                Expanded(
+                  child: _TournamentTabBar(
+                    tabs: _tabs,
+                    tournaments: visibleTournaments,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                IconButton.filled(
+                  tooltip: 'Создать турнир',
+                  onPressed: showCreateTournamentSheet,
+                  icon: const Icon(Icons.add),
+                ),
+              ],
             ),
           ),
           Expanded(
@@ -900,6 +839,37 @@ class _TournamentsPageState extends State<_TournamentsPage> {
     );
   }
 
+  Future<void> showCreateTournamentSheet() async {
+    final tournament = await showModalBottomSheet<Tournament>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (context) => _CreateTournamentSheet(
+        repository: widget.repository,
+        initialCity: widget.selectedCity,
+        initialDiscipline: widget.selectedDiscipline.label,
+      ),
+    );
+    if (tournament == null || !mounted) {
+      return;
+    }
+    await widget.onRefresh();
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Турнир создан: ${tournament.title}')),
+    );
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => TournamentDetailsPage(
+          repository: widget.repository,
+          tournament: tournament,
+        ),
+      ),
+    );
+  }
+
   int _initialTabIndex(List<Tournament> tournaments) {
     for (var index = 0; index < _tabs.length; index++) {
       final status = _tabs[index].status;
@@ -908,6 +878,189 @@ class _TournamentsPageState extends State<_TournamentsPage> {
       }
     }
     return 0;
+  }
+}
+
+class _CreateTournamentSheet extends StatefulWidget {
+  const _CreateTournamentSheet({
+    required this.repository,
+    required this.initialCity,
+    required this.initialDiscipline,
+  });
+
+  final LeagueRepository repository;
+  final String initialCity;
+  final String initialDiscipline;
+
+  @override
+  State<_CreateTournamentSheet> createState() => _CreateTournamentSheetState();
+}
+
+class _CreateTournamentSheetState extends State<_CreateTournamentSheet> {
+  late final TextEditingController titleController = TextEditingController(
+    text: '${widget.initialCity} 2026. Тестовый турнир',
+  );
+  late final TextEditingController cityController = TextEditingController(
+    text: widget.initialCity,
+  );
+  final TextEditingController clubController = TextEditingController();
+  final TextEditingController dateController = TextEditingController();
+  late final TextEditingController disciplineController = TextEditingController(
+    text: widget.initialDiscipline,
+  );
+  final TextEditingController capacityController = TextEditingController(
+    text: '32',
+  );
+  bool loading = false;
+  String? error;
+
+  @override
+  void dispose() {
+    titleController.dispose();
+    cityController.dispose();
+    clubController.dispose();
+    dateController.dispose();
+    disciplineController.dispose();
+    capacityController.dispose();
+    super.dispose();
+  }
+
+  Future<void> createTournament() async {
+    final title = titleController.text.trim();
+    final city = cityController.text.trim();
+    final club = clubController.text.trim();
+    final dateText = dateController.text.trim();
+    final discipline = disciplineController.text.trim();
+    final capacity = int.tryParse(capacityController.text.trim());
+    if (title.isEmpty || city.isEmpty || club.isEmpty || dateText.isEmpty) {
+      setState(() => error = 'Заполните название, город, клуб и дату.');
+      return;
+    }
+
+    setState(() {
+      loading = true;
+      error = null;
+    });
+    try {
+      final tournament = await widget.repository.createTournament(
+        title: title,
+        city: city,
+        club: club,
+        dateText: dateText,
+        discipline: discipline.isEmpty ? 'Пирамида' : discipline,
+        capacity: capacity,
+        createdBy: 'llb-mobile',
+      );
+      if (mounted) {
+        Navigator.of(context).pop(tournament);
+      }
+    } catch (exception) {
+      if (mounted) {
+        setState(() => error = 'Не удалось создать турнир: $exception');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => loading = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        16,
+        16,
+        16,
+        16 + MediaQuery.viewInsetsOf(context).bottom,
+      ),
+      child: ListView(
+        shrinkWrap: true,
+        children: [
+          Text(
+            'Новый турнир',
+            style: Theme.of(
+              context,
+            ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: titleController,
+            enabled: !loading,
+            decoration: const InputDecoration(
+              labelText: 'Название',
+              prefixIcon: Icon(Icons.emoji_events_outlined),
+            ),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: cityController,
+            enabled: !loading,
+            decoration: const InputDecoration(
+              labelText: 'Город',
+              prefixIcon: Icon(Icons.place_outlined),
+            ),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: clubController,
+            enabled: !loading,
+            decoration: const InputDecoration(
+              labelText: 'Клуб',
+              prefixIcon: Icon(Icons.store_outlined),
+            ),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: dateController,
+            enabled: !loading,
+            decoration: const InputDecoration(
+              labelText: 'Дата и время',
+              hintText: '25.07.26 19:00',
+              prefixIcon: Icon(Icons.event_outlined),
+            ),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: disciplineController,
+            enabled: !loading,
+            decoration: const InputDecoration(
+              labelText: 'Дисциплина',
+              prefixIcon: Icon(Icons.pool_outlined),
+            ),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: capacityController,
+            enabled: !loading,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(
+              labelText: 'Лимит участников',
+              prefixIcon: Icon(Icons.groups_outlined),
+            ),
+          ),
+          if (error != null) ...[
+            const SizedBox(height: 10),
+            Text(
+              error!,
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+          ],
+          const SizedBox(height: 14),
+          FilledButton.icon(
+            onPressed: loading ? null : createTournament,
+            icon: loading
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.check),
+            label: const Text('Создать'),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -2229,6 +2382,15 @@ class _TournamentDetailsPageState extends State<TournamentDetailsPage> {
                   text: 'Для этого турнира еще нет списка встреч.',
                 ),
             ],
+            const SizedBox(height: 12),
+            TournamentMediaSection(
+              repository: widget.repository,
+              tournament: tournament,
+              username: llbUsername,
+              onChanged: (media) {
+                setState(() => tournament = tournament.copyWith(media: media));
+              },
+            ),
           ],
         ),
       ),

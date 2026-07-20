@@ -10,6 +10,24 @@ abstract class LeagueRepository {
   List<VideoStream> videoStreams();
   Future<void> load();
   Future<Player?> playerById(String id);
+  Future<Tournament> createTournament({
+    required String title,
+    required String city,
+    required String club,
+    required String dateText,
+    required String discipline,
+    required int? capacity,
+    required String createdBy,
+  });
+  Future<List<TournamentMedia>> tournamentMedia(Tournament tournament);
+  Future<TournamentMedia> uploadTournamentMedia({
+    required Tournament tournament,
+    required TournamentMediaKind kind,
+    required String filename,
+    required List<int> bytes,
+    required String uploadedBy,
+    String title = '',
+  });
   Future<void> requestVideoStream({
     required Tournament tournament,
     required String playerId,
@@ -98,6 +116,57 @@ class ApiLeagueRepository implements LeagueRepository {
   }
 
   @override
+  Future<List<TournamentMedia>> tournamentMedia(Tournament tournament) async {
+    final uri = Uri.parse(baseUri).replace(
+      queryParameters: {
+        'resource': 'tournament_media',
+        'tournament_id': tournament.id,
+        'limit': '100',
+      },
+    );
+    final response = await client.get(uri);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      return tournament.media;
+    }
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    return (data['items'] as List<dynamic>? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(_tournamentMediaFromJson)
+        .toList();
+  }
+
+  @override
+  Future<TournamentMedia> uploadTournamentMedia({
+    required Tournament tournament,
+    required TournamentMediaKind kind,
+    required String filename,
+    required List<int> bytes,
+    required String uploadedBy,
+    String title = '',
+  }) async {
+    final uri = Uri.parse(
+      baseUri,
+    ).replace(queryParameters: {'resource': 'tournament_media'});
+    final request = http.MultipartRequest('POST', uri)
+      ..fields['tournament_id'] = tournament.id
+      ..fields['kind'] = kind.storageKey
+      ..fields['uploaded_by'] = uploadedBy
+      ..fields['title'] = title
+      ..files.add(
+        http.MultipartFile.fromBytes('file', bytes, filename: filename),
+      );
+    final streamedResponse = await client.send(request);
+    final response = await http.Response.fromStream(streamedResponse);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw StateError('LLB API HTTP ${response.statusCode}: ${response.body}');
+    }
+    final json = jsonDecode(response.body) as Map<String, dynamic>;
+    return _tournamentMediaFromJson(
+      (json['item'] as Map<String, dynamic>?) ?? json,
+    );
+  }
+
+  @override
   Future<Player?> playerById(String id) async {
     final normalized = id.trim();
     if (normalized.isEmpty) {
@@ -178,6 +247,43 @@ class ApiLeagueRepository implements LeagueRepository {
       ...results[3],
     ]).map(_tournamentFromJson).toList();
     _videoStreams = results[4].map(_videoStreamFromJson).toList();
+  }
+
+  @override
+  Future<Tournament> createTournament({
+    required String title,
+    required String city,
+    required String club,
+    required String dateText,
+    required String discipline,
+    required int? capacity,
+    required String createdBy,
+  }) async {
+    final uri = Uri.parse(
+      baseUri,
+    ).replace(queryParameters: {'resource': 'tournament_create'});
+    final response = await client.post(
+      uri,
+      headers: {'Content-Type': 'application/json; charset=utf-8'},
+      body: jsonEncode({
+        'title': title,
+        'city': city,
+        'club': club,
+        'date_text': dateText,
+        'discipline': discipline,
+        'participants_limit': capacity,
+        'created_by': createdBy,
+      }),
+    );
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw StateError('LLB API HTTP ${response.statusCode}: ${response.body}');
+    }
+    final json = jsonDecode(response.body) as Map<String, dynamic>;
+    final tournament = _tournamentFromJson(
+      (json['item'] as Map<String, dynamic>?) ?? json,
+    );
+    _tournaments = [tournament, ..._tournaments];
+    return tournament;
   }
 
   Future<void> loadVideoStreams() async {
@@ -282,6 +388,23 @@ class ApiLeagueRepository implements LeagueRepository {
           .map(_participantFromJson)
           .toList(),
       matches: matches,
+      media: (json['media'] as List<dynamic>? ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map(_tournamentMediaFromJson)
+          .toList(),
+    );
+  }
+
+  TournamentMedia _tournamentMediaFromJson(Map<String, dynamic> json) {
+    return TournamentMedia(
+      id: _text(json['id']),
+      tournamentId: _text(json['tournament_id']),
+      kind: TournamentMediaKind.fromStorage(_text(json['kind'], 'photo')),
+      title: _text(json['title']),
+      url: _text(json['url'] ?? json['file_url']),
+      mimeType: _text(json['mime_type']),
+      uploadedBy: _text(json['uploaded_by']),
+      createdAt: _text(json['created_at']),
     );
   }
 
@@ -595,6 +718,36 @@ class EmptyLeagueRepository implements LeagueRepository {
   Future<Player?> playerById(String id) async => null;
 
   @override
+  Future<Tournament> createTournament({
+    required String title,
+    required String city,
+    required String club,
+    required String dateText,
+    required String discipline,
+    required int? capacity,
+    required String createdBy,
+  }) async {
+    throw UnsupportedError('Tournament creation is not available');
+  }
+
+  @override
+  Future<List<TournamentMedia>> tournamentMedia(Tournament tournament) async {
+    return tournament.media;
+  }
+
+  @override
+  Future<TournamentMedia> uploadTournamentMedia({
+    required Tournament tournament,
+    required TournamentMediaKind kind,
+    required String filename,
+    required List<int> bytes,
+    required String uploadedBy,
+    String title = '',
+  }) async {
+    throw UnsupportedError('Media upload is not available');
+  }
+
+  @override
   Future<void> requestVideoStream({
     required Tournament tournament,
     required String playerId,
@@ -637,6 +790,34 @@ class MockLeagueRepository implements LeagueRepository {
   }
 
   @override
+  Future<Tournament> createTournament({
+    required String title,
+    required String city,
+    required String club,
+    required String dateText,
+    required String discipline,
+    required int? capacity,
+    required String createdBy,
+  }) async {
+    return Tournament(
+      id: 'mock-created',
+      title: title,
+      city: city,
+      club: club,
+      discipline: discipline,
+      level: 'Предстоящий',
+      dateLabel: dateText,
+      playersCount: 0,
+      capacity: capacity,
+      matchesCount: 0,
+      status: TournamentStatus.upcoming,
+      bracketUrl: 'https://www.llb.su/t/mock-created',
+      players: const [],
+      matches: const [],
+    );
+  }
+
+  @override
   Future<List<Player>> searchPlayers(
     String query, {
     required DisciplineFilter discipline,
@@ -659,6 +840,31 @@ class MockLeagueRepository implements LeagueRepository {
 
   @override
   void dispose() {}
+
+  @override
+  Future<List<TournamentMedia>> tournamentMedia(Tournament tournament) async {
+    return tournament.media;
+  }
+
+  @override
+  Future<TournamentMedia> uploadTournamentMedia({
+    required Tournament tournament,
+    required TournamentMediaKind kind,
+    required String filename,
+    required List<int> bytes,
+    required String uploadedBy,
+    String title = '',
+  }) async {
+    return TournamentMedia(
+      id: 'mock-media-${DateTime.now().microsecondsSinceEpoch}',
+      tournamentId: tournament.id,
+      kind: kind,
+      title: title,
+      url: '',
+      createdAt: DateTime.now().toIso8601String(),
+      uploadedBy: uploadedBy,
+    );
+  }
 
   @override
   List<VideoStream> videoStreams() => const [];
@@ -744,6 +950,16 @@ class MockLeagueRepository implements LeagueRepository {
         status: TournamentStatus.finished,
         bracketUrl: 'https://www.llb.su/tournaments/results',
         players: allPlayers,
+        media: const [
+          TournamentMedia(
+            id: 'media-1',
+            tournamentId: 'done-1',
+            kind: TournamentMediaKind.photo,
+            title: 'Финальный стол',
+            url: 'https://example.test/final-table.jpg',
+            createdAt: '2026-07-09 20:10:00',
+          ),
+        ],
         matches: const [
           MatchInfo(
             round: 'Финал',

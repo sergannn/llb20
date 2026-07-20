@@ -24,6 +24,12 @@
 	<string>1</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Камера нужна, чтобы добавить фото или видео к турниру.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Микрофон нужен для записи видео турнира.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Галерея нужна, чтобы выбрать фото или видео турнира.</string>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>
