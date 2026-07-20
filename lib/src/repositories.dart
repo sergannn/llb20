@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'models.dart';
 
@@ -61,6 +62,8 @@ class ApiLeagueRepository implements LeagueRepository {
   final int playersLimit;
   final int tournamentsLimit;
   final LeagueRepository fallback;
+  static const _cacheKey = 'llb_api_repository_cache_v1';
+  static const _requestTimeout = Duration(seconds: 8);
 
   List<Player> _players = const [];
   List<Tournament> _tournaments = const [];
@@ -79,18 +82,22 @@ class ApiLeagueRepository implements LeagueRepository {
 
   @override
   Future<Tournament> tournamentDetails(Tournament tournament) async {
-    final uri = Uri.parse(
-      baseUri,
-    ).replace(queryParameters: {'resource': 'tournament', 'id': tournament.id});
-    final response = await client.get(uri);
-    if (response.statusCode < 200 || response.statusCode >= 300) {
+    try {
+      final uri = Uri.parse(baseUri).replace(
+        queryParameters: {'resource': 'tournament', 'id': tournament.id},
+      );
+      final response = await client.get(uri).timeout(_requestTimeout);
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        return fallback.tournamentDetails(tournament);
+      }
+      final json = jsonDecode(response.body) as Map<String, dynamic>;
+      return _tournamentFromJson({
+        ...json,
+        'title': json['title'] ?? tournament.title,
+      });
+    } catch (_) {
       return fallback.tournamentDetails(tournament);
     }
-    final json = jsonDecode(response.body) as Map<String, dynamic>;
-    return _tournamentFromJson({
-      ...json,
-      'title': json['title'] ?? tournament.title,
-    });
   }
 
   @override
@@ -105,34 +112,46 @@ class ApiLeagueRepository implements LeagueRepository {
           .where((player) => player.matchesDiscipline(discipline))
           .toList();
     }
-    final rows = await _getList('players', {
-      'q': normalized,
-      'limit': '$limit',
-    });
-    return rows
-        .map(_playerFromJson)
-        .where((player) => player.matchesDiscipline(discipline))
-        .toList();
+    try {
+      final rows = await _getList('players', {
+        'q': normalized,
+        'limit': '$limit',
+      });
+      return rows
+          .map(_playerFromJson)
+          .where((player) => player.matchesDiscipline(discipline))
+          .toList();
+    } catch (_) {
+      return players()
+          .where((player) => player.matchesDiscipline(discipline))
+          .where((player) => player.matchesQuery(normalized))
+          .take(limit)
+          .toList();
+    }
   }
 
   @override
   Future<List<TournamentMedia>> tournamentMedia(Tournament tournament) async {
-    final uri = Uri.parse(baseUri).replace(
-      queryParameters: {
-        'resource': 'tournament_media',
-        'tournament_id': tournament.id,
-        'limit': '100',
-      },
-    );
-    final response = await client.get(uri);
-    if (response.statusCode < 200 || response.statusCode >= 300) {
+    try {
+      final uri = Uri.parse(baseUri).replace(
+        queryParameters: {
+          'resource': 'tournament_media',
+          'tournament_id': tournament.id,
+          'limit': '100',
+        },
+      );
+      final response = await client.get(uri).timeout(_requestTimeout);
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        return tournament.media;
+      }
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      return (data['items'] as List<dynamic>? ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map(_tournamentMediaFromJson)
+          .toList();
+    } catch (_) {
       return tournament.media;
     }
-    final data = jsonDecode(response.body) as Map<String, dynamic>;
-    return (data['items'] as List<dynamic>? ?? const [])
-        .whereType<Map<String, dynamic>>()
-        .map(_tournamentMediaFromJson)
-        .toList();
   }
 
   @override
@@ -155,7 +174,9 @@ class ApiLeagueRepository implements LeagueRepository {
       ..files.add(
         http.MultipartFile.fromBytes('file', bytes, filename: filename),
       );
-    final streamedResponse = await client.send(request);
+    final streamedResponse = await client
+        .send(request)
+        .timeout(_requestTimeout);
     final response = await http.Response.fromStream(streamedResponse);
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw StateError('LLB API HTTP ${response.statusCode}: ${response.body}');
@@ -180,18 +201,22 @@ class ApiLeagueRepository implements LeagueRepository {
       }
     }
 
-    final uri = Uri.parse(
-      baseUri,
-    ).replace(queryParameters: {'resource': 'player', 'id': normalized});
-    final response = await client.get(uri);
-    if (response.statusCode == 404) {
+    try {
+      final uri = Uri.parse(
+        baseUri,
+      ).replace(queryParameters: {'resource': 'player', 'id': normalized});
+      final response = await client.get(uri).timeout(_requestTimeout);
+      if (response.statusCode == 404) {
+        return cachedPlayer ?? fallback.playerById(normalized);
+      }
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        return cachedPlayer ?? fallback.playerById(normalized);
+      }
+      final json = jsonDecode(response.body) as Map<String, dynamic>;
+      return _playerFromJson(json);
+    } catch (_) {
       return cachedPlayer ?? fallback.playerById(normalized);
     }
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      return cachedPlayer ?? fallback.playerById(normalized);
-    }
-    final json = jsonDecode(response.body) as Map<String, dynamic>;
-    return _playerFromJson(json);
   }
 
   @override
@@ -204,16 +229,18 @@ class ApiLeagueRepository implements LeagueRepository {
     final uri = Uri.parse(
       baseUri,
     ).replace(queryParameters: {'resource': 'video_stream_request'});
-    final response = await client.post(
-      uri,
-      headers: {'Content-Type': 'application/json; charset=utf-8'},
-      body: jsonEncode({
-        'tournament_id': tournament.id,
-        'player_id': playerId,
-        'requested_by': username,
-        'provider': provider,
-      }),
-    );
+    final response = await client
+        .post(
+          uri,
+          headers: {'Content-Type': 'application/json; charset=utf-8'},
+          body: jsonEncode({
+            'tournament_id': tournament.id,
+            'player_id': playerId,
+            'requested_by': username,
+            'provider': provider,
+          }),
+        )
+        .timeout(_requestTimeout);
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw StateError('LLB API HTTP ${response.statusCode}: ${response.body}');
     }
@@ -222,31 +249,41 @@ class ApiLeagueRepository implements LeagueRepository {
 
   @override
   Future<void> load() async {
-    final results = await Future.wait([
-      _getList('players', {'limit': '$playersLimit'}),
-      _getList('tournaments', {
-        'status': 'upcoming',
-        'limit': '$tournamentsLimit',
-      }),
-      _getList('tournaments', {
-        'status': 'online',
-        'limit': '$tournamentsLimit',
-      }),
-      _getList('tournaments', {
-        'status': 'finished',
-        'limit': '$tournamentsLimit',
-      }),
-      _getList('video_streams', {'limit': '100'}),
-    ]);
-
-    _players = results[0].map(_playerFromJson).toList()
-      ..sort((a, b) => b.rating.compareTo(a.rating));
-    _tournaments = _mergeTournamentRows([
-      ...results[1],
-      ...results[2],
-      ...results[3],
-    ]).map(_tournamentFromJson).toList();
-    _videoStreams = results[4].map(_videoStreamFromJson).toList();
+    try {
+      final results = await Future.wait([
+        _getList('players', {'limit': '$playersLimit'}),
+        _getList('tournaments', {
+          'status': 'upcoming',
+          'limit': '$tournamentsLimit',
+        }),
+        _getList('tournaments', {
+          'status': 'online',
+          'limit': '$tournamentsLimit',
+        }),
+        _getList('tournaments', {
+          'status': 'finished',
+          'limit': '$tournamentsLimit',
+        }),
+        _getList('video_streams', {'limit': '100'}),
+      ]);
+      final tournamentRows = [...results[1], ...results[2], ...results[3]];
+      _applyRows(
+        players: results[0],
+        tournaments: tournamentRows,
+        videoStreams: results[4],
+      );
+      await _saveCache(
+        players: results[0],
+        tournaments: tournamentRows,
+        videoStreams: results[4],
+      );
+    } catch (error) {
+      final restored = await _restoreCache();
+      if (restored) {
+        throw StateError('Нет сети. Показана сохраненная копия.');
+      }
+      rethrow;
+    }
   }
 
   @override
@@ -262,19 +299,21 @@ class ApiLeagueRepository implements LeagueRepository {
     final uri = Uri.parse(
       baseUri,
     ).replace(queryParameters: {'resource': 'tournament_create'});
-    final response = await client.post(
-      uri,
-      headers: {'Content-Type': 'application/json; charset=utf-8'},
-      body: jsonEncode({
-        'title': title,
-        'city': city,
-        'club': club,
-        'date_text': dateText,
-        'discipline': discipline,
-        'participants_limit': capacity,
-        'created_by': createdBy,
-      }),
-    );
+    final response = await client
+        .post(
+          uri,
+          headers: {'Content-Type': 'application/json; charset=utf-8'},
+          body: jsonEncode({
+            'title': title,
+            'city': city,
+            'club': club,
+            'date_text': dateText,
+            'discipline': discipline,
+            'participants_limit': capacity,
+            'created_by': createdBy,
+          }),
+        )
+        .timeout(_requestTimeout);
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw StateError('LLB API HTTP ${response.statusCode}: ${response.body}');
     }
@@ -303,13 +342,79 @@ class ApiLeagueRepository implements LeagueRepository {
     final uri = Uri.parse(
       baseUri,
     ).replace(queryParameters: {'resource': resource, ...query});
-    final response = await client.get(uri);
+    final response = await client.get(uri).timeout(_requestTimeout);
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw StateError('LLB API HTTP ${response.statusCode}');
     }
 
     final data = jsonDecode(response.body) as Map<String, dynamic>;
     return (data['items'] as List<dynamic>? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .toList();
+  }
+
+  void _applyRows({
+    required List<Map<String, dynamic>> players,
+    required List<Map<String, dynamic>> tournaments,
+    required List<Map<String, dynamic>> videoStreams,
+  }) {
+    _players = players.map(_playerFromJson).toList()
+      ..sort((a, b) => b.rating.compareTo(a.rating));
+    _tournaments = _mergeTournamentRows(
+      tournaments,
+    ).map(_tournamentFromJson).toList();
+    _videoStreams = videoStreams.map(_videoStreamFromJson).toList();
+  }
+
+  Future<void> _saveCache({
+    required List<Map<String, dynamic>> players,
+    required List<Map<String, dynamic>> tournaments,
+    required List<Map<String, dynamic>> videoStreams,
+  }) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        _cacheKey,
+        jsonEncode({
+          'saved_at': DateTime.now().toIso8601String(),
+          'players': players,
+          'tournaments': tournaments,
+          'video_streams': videoStreams,
+        }),
+      );
+    } catch (_) {
+      // Cache is best-effort: a successful API load must not fail because
+      // local storage is unavailable in tests or on a damaged device profile.
+    }
+  }
+
+  Future<bool> _restoreCache() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_cacheKey);
+      if (raw == null || raw.isEmpty) {
+        return false;
+      }
+      final json = jsonDecode(raw) as Map<String, dynamic>;
+      final players = _cachedRows(json['players']);
+      final tournaments = _cachedRows(json['tournaments']);
+      final videoStreams = _cachedRows(json['video_streams']);
+      if (players.isEmpty && tournaments.isEmpty && videoStreams.isEmpty) {
+        return false;
+      }
+      _applyRows(
+        players: players,
+        tournaments: tournaments,
+        videoStreams: videoStreams,
+      );
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  List<Map<String, dynamic>> _cachedRows(dynamic raw) {
+    return (raw as List<dynamic>? ?? const [])
         .whereType<Map<String, dynamic>>()
         .toList();
   }
