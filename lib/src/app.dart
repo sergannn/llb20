@@ -1879,6 +1879,388 @@ class _MapPoint {
   final double longitude;
 }
 
+class MediaLibraryPage extends StatefulWidget {
+  const MediaLibraryPage({super.key, required this.repository});
+
+  final LeagueRepository repository;
+
+  @override
+  State<MediaLibraryPage> createState() => _MediaLibraryPageState();
+}
+
+class _MediaLibraryPageState extends State<MediaLibraryPage> {
+  final List<_TournamentMediaEntry> entries = [];
+  TournamentMediaKind? filter;
+  bool loading = true;
+  String? error;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(loadMedia());
+  }
+
+  Future<void> loadMedia() async {
+    setState(() {
+      loading = true;
+      error = null;
+    });
+    try {
+      final nextEntries = <_TournamentMediaEntry>[];
+      for (final tournament in widget.repository.tournaments()) {
+        final media = tournament.media.isNotEmpty
+            ? tournament.media
+            : await widget.repository.tournamentMedia(tournament);
+        for (final item in media) {
+          nextEntries.add(
+            _TournamentMediaEntry(tournament: tournament, media: item),
+          );
+        }
+      }
+      nextEntries.sort((a, b) {
+        return b.media.createdAt.compareTo(a.media.createdAt);
+      });
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        entries
+          ..clear()
+          ..addAll(nextEntries);
+      });
+    } catch (exception) {
+      if (mounted) {
+        setState(() => error = 'Не удалось загрузить медиа: $exception');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => loading = false);
+      }
+    }
+  }
+
+  List<_TournamentMediaEntry> get visibleEntries {
+    final selected = filter;
+    if (selected == null) {
+      return entries;
+    }
+    return entries.where((entry) => entry.media.kind == selected).toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final visible = visibleEntries;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Медиа'),
+        actions: [
+          IconButton(
+            tooltip: 'Обновить',
+            onPressed: loading ? null : loadMedia,
+            icon: const Icon(Icons.refresh),
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          if (loading) const LinearProgressIndicator(minHeight: 2),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  ChoiceChip(
+                    label: Text('Все (${entries.length})'),
+                    selected: filter == null,
+                    onSelected: (_) => setState(() => filter = null),
+                  ),
+                  ChoiceChip(
+                    label: Text(
+                      'Фото (${entries.where((entry) => !entry.media.isVideo).length})',
+                    ),
+                    selected: filter == TournamentMediaKind.photo,
+                    onSelected: (_) =>
+                        setState(() => filter = TournamentMediaKind.photo),
+                  ),
+                  ChoiceChip(
+                    label: Text(
+                      'Видео (${entries.where((entry) => entry.media.isVideo).length})',
+                    ),
+                    selected: filter == TournamentMediaKind.video,
+                    onSelected: (_) =>
+                        setState(() => filter = TournamentMediaKind.video),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (error != null)
+            MaterialBanner(
+              leading: const Icon(Icons.cloud_off_outlined),
+              content: Text(error!),
+              actions: [
+                TextButton(onPressed: loadMedia, child: const Text('Еще раз')),
+              ],
+            ),
+          Expanded(
+            child: visible.isEmpty && !loading
+                ? const _EmptyState(
+                    icon: Icons.perm_media_outlined,
+                    title: 'Медиа пока нет',
+                    text: 'Фото и видео появятся после загрузки в турнирах.',
+                  )
+                : GridView.builder(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 2,
+                          mainAxisSpacing: 10,
+                          crossAxisSpacing: 10,
+                          childAspectRatio: 0.76,
+                        ),
+                    itemCount: visible.length,
+                    itemBuilder: (context, index) {
+                      return _MediaLibraryTile(entry: visible[index]);
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TournamentMediaEntry {
+  const _TournamentMediaEntry({required this.tournament, required this.media});
+
+  final Tournament tournament;
+  final TournamentMedia media;
+}
+
+class _MediaLibraryTile extends StatelessWidget {
+  const _MediaLibraryTile({required this.entry});
+
+  final _TournamentMediaEntry entry;
+
+  @override
+  Widget build(BuildContext context) {
+    final media = entry.media;
+    final scheme = Theme.of(context).colorScheme;
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: media.url.isEmpty
+            ? null
+            : () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => _MediaLibraryViewer(entry: entry),
+                  ),
+                );
+              },
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  if (!media.isVideo && media.url.isNotEmpty)
+                    Image.network(
+                      media.url,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, _, _) =>
+                          _MediaLibraryFallback(media: media),
+                    )
+                  else
+                    _MediaLibraryFallback(media: media),
+                  if (media.isVideo)
+                    Center(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: scheme.scrim.withValues(alpha: 0.52),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Padding(
+                          padding: EdgeInsets.all(10),
+                          child: Icon(
+                            Icons.play_arrow,
+                            color: Colors.white,
+                            size: 34,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    media.title.isEmpty ? media.kind.label : media.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    entry.tournament.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MediaLibraryFallback extends StatelessWidget {
+  const _MediaLibraryFallback({required this.media});
+
+  final TournamentMedia media;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return ColoredBox(
+      color: scheme.surfaceContainerHighest,
+      child: Center(
+        child: Icon(
+          media.isVideo ? Icons.videocam_outlined : Icons.image_outlined,
+          color: scheme.onSurfaceVariant,
+          size: 42,
+        ),
+      ),
+    );
+  }
+}
+
+class _MediaLibraryViewer extends StatelessWidget {
+  const _MediaLibraryViewer({required this.entry});
+
+  final _TournamentMediaEntry entry;
+
+  @override
+  Widget build(BuildContext context) {
+    final media = entry.media;
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(
+          media.title.isEmpty ? media.kind.label : media.title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+      ),
+      body: media.isVideo
+          ? WebViewWidget(
+              controller: WebViewController()
+                ..setJavaScriptMode(JavaScriptMode.unrestricted)
+                ..loadRequest(Uri.parse(media.url)),
+            )
+          : InteractiveViewer(
+              child: Center(
+                child: Image.network(
+                  media.url,
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, _, _) =>
+                      _MediaLibraryFallback(media: media),
+                ),
+              ),
+            ),
+    );
+  }
+}
+
+class NewsPage extends StatelessWidget {
+  const NewsPage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Новости')),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+        children: [
+          DecoratedBox(
+            decoration: BoxDecoration(
+              color: scheme.primaryContainer,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(18),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.article_outlined,
+                    color: scheme.onPrimaryContainer,
+                    size: 34,
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Раздел в разработке',
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(
+                                color: scheme.onPrimaryContainer,
+                                fontWeight: FontWeight.w900,
+                              ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Новости Лиги появятся здесь после подключения источника.',
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(color: scheme.onPrimaryContainer),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          const _CuePlaceholderTile(
+            icon: Icons.campaign_outlined,
+            title: 'Анонсы',
+            subtitle: 'Новые турниры, клубы и изменения расписания',
+          ),
+          const _CuePlaceholderTile(
+            icon: Icons.emoji_events_outlined,
+            title: 'Итоги турниров',
+            subtitle: 'Короткие заметки по завершенным событиям',
+          ),
+          const _CuePlaceholderTile(
+            icon: Icons.notifications_none,
+            title: 'Уведомления',
+            subtitle: 'Важные новости для игроков и организаторов',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class CuesPage extends StatelessWidget {
   const CuesPage({super.key});
 
@@ -2248,6 +2630,33 @@ class _SettingsDrawer extends StatelessWidget {
                             initialCity: selectedCity,
                           ),
                         ),
+                      );
+                    },
+                  ),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.perm_media_outlined),
+                    title: const Text('Медиа'),
+                    subtitle: const Text('Фото и видео турниров'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              MediaLibraryPage(repository: repository),
+                        ),
+                      );
+                    },
+                  ),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.article_outlined),
+                    title: const Text('Новости'),
+                    subtitle: const Text('Раздел в разработке'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const NewsPage()),
                       );
                     },
                   ),
