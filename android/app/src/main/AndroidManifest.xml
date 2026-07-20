@@ -1,6 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application
-        android:label="llb_mobile"
+        android:label="Лига бильярдистов"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity
