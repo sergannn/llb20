@@ -1879,6 +1879,104 @@ class _MapPoint {
   final double longitude;
 }
 
+class CuesPage extends StatelessWidget {
+  const CuesPage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Кии')),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+        children: [
+          DecoratedBox(
+            decoration: BoxDecoration(
+              color: scheme.primaryContainer,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(18),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.construction_outlined,
+                    color: scheme.onPrimaryContainer,
+                    size: 34,
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Раздел в разработке',
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(
+                                color: scheme.onPrimaryContainer,
+                                fontWeight: FontWeight.w900,
+                              ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Каталог киев появится позже.',
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(color: scheme.onPrimaryContainer),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          const _CuePlaceholderTile(
+            icon: Icons.inventory_2_outlined,
+            title: 'Каталог',
+            subtitle: 'Марка, модель, длина, вес и материал',
+          ),
+          const _CuePlaceholderTile(
+            icon: Icons.tune_outlined,
+            title: 'Подбор',
+            subtitle: 'Фильтры по дисциплине и параметрам',
+          ),
+          const _CuePlaceholderTile(
+            icon: Icons.bookmark_border,
+            title: 'Избранное',
+            subtitle: 'Сохраненные варианты для сравнения',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CuePlaceholderTile extends StatelessWidget {
+  const _CuePlaceholderTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: ListTile(
+        enabled: false,
+        leading: Icon(icon),
+        title: Text(title),
+        subtitle: Text(subtitle),
+      ),
+    );
+  }
+}
+
 class _LlbLoginDialog extends StatefulWidget {
   const _LlbLoginDialog();
 
@@ -2150,6 +2248,18 @@ class _SettingsDrawer extends StatelessWidget {
                             initialCity: selectedCity,
                           ),
                         ),
+                      );
+                    },
+                  ),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.sports_cricket_outlined),
+                    title: const Text('Кии'),
+                    subtitle: const Text('Раздел в разработке'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const CuesPage()),
                       );
                     },
                   ),
