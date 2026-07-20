@@ -46,6 +46,7 @@ class LlbWebAuthClient {
   final String baseUrl;
   final String apiBaseUrl;
   final Map<String, String> _cookies = {};
+  static const _requestTimeout = Duration(seconds: 15);
 
   Map<String, String> get cookies => Map.unmodifiable(_cookies);
 
@@ -154,25 +155,42 @@ class LlbWebAuthClient {
     required String action,
   }) async {
     final normalizedAction = action == 'unregister' ? 'unregister' : 'register';
-    final response = await _send(
-      'POST',
-      '/node/$tournamentId',
-      body: normalizedAction == 'register'
-          ? {'register': 'yes', 'agree': 'ok'}
-          : {'unregister': 'yes'},
-    );
-    final loggedIn = _isLoggedIn(response.body);
-    final ok =
-        response.statusCode >= 200 && response.statusCode < 400 && loggedIn;
+    Object? lastError;
+    for (var attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        final response = await _send(
+          'POST',
+          '/node/$tournamentId',
+          body: normalizedAction == 'register'
+              ? {'register': 'yes', 'agree': 'ok'}
+              : {'unregister': 'yes'},
+        );
+        final loggedIn = _isLoggedIn(response.body);
+        final ok =
+            response.statusCode >= 200 && response.statusCode < 400 && loggedIn;
+        return LlbTournamentActionResult(
+          ok: ok,
+          action: normalizedAction,
+          message: ok
+              ? (normalizedAction == 'register'
+                    ? 'Заявка отправлена в LLB.'
+                    : 'Регистрация отменена в LLB.')
+              : 'LLB не подтвердил действие. Возможно, сессия истекла.',
+          error: ok ? null : 'llb_action_failed',
+        );
+      } catch (error) {
+        lastError = error;
+        if (attempt == 0) {
+          await Future<void>.delayed(const Duration(milliseconds: 700));
+        }
+      }
+    }
     return LlbTournamentActionResult(
-      ok: ok,
+      ok: false,
       action: normalizedAction,
-      message: ok
-          ? (normalizedAction == 'register'
-                ? 'Заявка отправлена в LLB.'
-                : 'Регистрация отменена в LLB.')
-          : 'LLB не подтвердил действие. Возможно, сессия истекла.',
-      error: ok ? null : 'llb_action_failed',
+      message:
+          'Связь с LLB оборвалась. Обновите турнир и попробуйте действие еще раз.',
+      error: lastError?.toString() ?? 'llb_connection_failed',
     );
   }
 
@@ -235,7 +253,7 @@ class LlbWebAuthClient {
       request.bodyFields = body;
     }
 
-    final streamed = await _client.send(request);
+    final streamed = await _client.send(request).timeout(_requestTimeout);
     final response = await http.Response.fromStream(streamed);
     _storeCookies(response.headers['set-cookie']);
     return response;
