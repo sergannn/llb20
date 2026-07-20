@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
@@ -310,6 +312,33 @@ class _LeagueHomePageState extends State<LeagueHomePage> {
     return sorted.take(6).toList();
   }
 
+  List<ClubSummary> clubSummaries() {
+    final byKey = <String, ClubSummary>{};
+    for (final tournament in repository.tournaments()) {
+      final name = tournament.club.trim();
+      final city = tournament.city.trim();
+      if (name.isEmpty || city.isEmpty) {
+        continue;
+      }
+      final key = '${city.toLowerCase()}::$name'.toLowerCase();
+      final previous = byKey[key];
+      byKey[key] = ClubSummary(
+        name: name,
+        city: city,
+        tournamentsCount: (previous?.tournamentsCount ?? 0) + 1,
+      );
+    }
+    final clubs = byKey.values.toList()
+      ..sort((a, b) {
+        final byCity = a.city.toLowerCase().compareTo(b.city.toLowerCase());
+        if (byCity != 0) {
+          return byCity;
+        }
+        return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+      });
+    return clubs;
+  }
+
   bool _looksLikeCity(String value) {
     final text = value.trim();
     final lower = text.toLowerCase();
@@ -392,6 +421,7 @@ class _LeagueHomePageState extends State<LeagueHomePage> {
         search: search,
         selectedCity: selectedCity,
         selectedDiscipline: selectedDiscipline,
+        citySuggestionsFor: citySuggestions,
         onRefresh: loadLeagueData,
       ),
       _PlayersPage(
@@ -425,6 +455,7 @@ class _LeagueHomePageState extends State<LeagueHomePage> {
         repository: repository,
         selectedCity: selectedCity,
         selectedDiscipline: selectedDiscipline,
+        clubs: clubSummaries(),
         llbUsername: llbUsername,
         llbPlayerId: llbPlayerId,
         llbSessionValid: llbSessionValid,
@@ -747,6 +778,7 @@ class _TournamentsPage extends StatefulWidget {
     required this.search,
     required this.selectedCity,
     required this.selectedDiscipline,
+    required this.citySuggestionsFor,
     required this.onRefresh,
   });
 
@@ -754,6 +786,7 @@ class _TournamentsPage extends StatefulWidget {
   final String search;
   final String selectedCity;
   final DisciplineFilter selectedDiscipline;
+  final List<String> Function(String query) citySuggestionsFor;
   final Future<void> Function() onRefresh;
 
   @override
@@ -848,6 +881,7 @@ class _TournamentsPageState extends State<_TournamentsPage> {
         repository: widget.repository,
         initialCity: widget.selectedCity,
         initialDiscipline: widget.selectedDiscipline.label,
+        citySuggestionsFor: widget.citySuggestionsFor,
       ),
     );
     if (tournament == null || !mounted) {
@@ -886,11 +920,13 @@ class _CreateTournamentSheet extends StatefulWidget {
     required this.repository,
     required this.initialCity,
     required this.initialDiscipline,
+    required this.citySuggestionsFor,
   });
 
   final LeagueRepository repository;
   final String initialCity;
   final String initialDiscipline;
+  final List<String> Function(String query) citySuggestionsFor;
 
   @override
   State<_CreateTournamentSheet> createState() => _CreateTournamentSheetState();
@@ -965,6 +1001,97 @@ class _CreateTournamentSheetState extends State<_CreateTournamentSheet> {
     }
   }
 
+  Future<void> pickCity() async {
+    final city = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (context) => _CityPickerSheet(
+        initialCity: cityController.text,
+        suggestionsFor: widget.citySuggestionsFor,
+      ),
+    );
+    if (city == null || !mounted) {
+      return;
+    }
+    setState(() {
+      cityController.text = city;
+      if (!clubSuggestions(city: city).contains(clubController.text.trim())) {
+        clubController.clear();
+      }
+    });
+  }
+
+  Future<void> pickDiscipline() async {
+    final selected = DisciplineFilter.values.firstWhere(
+      (item) => item.label == disciplineController.text.trim(),
+      orElse: () => DisciplineFilter.russianBilliards,
+    );
+    final discipline = await showModalBottomSheet<DisciplineFilter>(
+      context: context,
+      useSafeArea: true,
+      builder: (context) =>
+          _DisciplinePickerSheet(selectedDiscipline: selected),
+    );
+    if (discipline == null || !mounted) {
+      return;
+    }
+    setState(() => disciplineController.text = discipline.label);
+  }
+
+  Future<void> pickDateTime() async {
+    final now = DateTime.now();
+    final date = await showDatePicker(
+      context: context,
+      initialDate: now,
+      firstDate: DateTime(now.year, now.month, now.day),
+      lastDate: DateTime(now.year + 2, 12, 31),
+    );
+    if (date == null || !mounted) {
+      return;
+    }
+    final time = await showTimePicker(
+      context: context,
+      initialTime: const TimeOfDay(hour: 19, minute: 0),
+    );
+    if (time == null || !mounted) {
+      return;
+    }
+    setState(() {
+      dateController.text =
+          '${_two(date.day)}.${_two(date.month)}.${_two(date.year % 100)} '
+          '${_two(time.hour)}:${_two(time.minute)}';
+    });
+  }
+
+  List<String> clubSuggestions({String? city}) {
+    final selectedCity = (city ?? cityController.text).trim().toLowerCase();
+    final clubs = <String>{};
+    for (final tournament in widget.repository.tournaments()) {
+      final club = tournament.club.trim();
+      if (club.isEmpty) {
+        continue;
+      }
+      if (selectedCity.isNotEmpty &&
+          tournament.city.trim().toLowerCase() != selectedCity) {
+        continue;
+      }
+      clubs.add(club);
+    }
+    final sorted = clubs.toList()
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    return sorted.take(12).toList();
+  }
+
+  List<String> disciplineSuggestions() {
+    return DisciplineFilter.values
+        .where((discipline) => discipline != DisciplineFilter.all)
+        .map((discipline) => discipline.label)
+        .toList();
+  }
+
+  String _two(int value) => value.toString().padLeft(2, '0');
+
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -996,10 +1123,28 @@ class _CreateTournamentSheetState extends State<_CreateTournamentSheet> {
           TextField(
             controller: cityController,
             enabled: !loading,
+            readOnly: true,
+            onTap: loading ? null : pickCity,
             decoration: const InputDecoration(
               labelText: 'Город',
               prefixIcon: Icon(Icons.place_outlined),
+              suffixIcon: Icon(Icons.expand_more),
             ),
+          ),
+          _SuggestionChips(
+            options: widget.citySuggestionsFor(cityController.text),
+            selected: cityController.text,
+            maxVisible: 6,
+            onSelected: loading
+                ? null
+                : (value) => setState(() {
+                    cityController.text = value;
+                    if (!clubSuggestions(
+                      city: value,
+                    ).contains(clubController.text.trim())) {
+                      clubController.clear();
+                    }
+                  }),
           ),
           const SizedBox(height: 10),
           TextField(
@@ -1010,24 +1155,46 @@ class _CreateTournamentSheetState extends State<_CreateTournamentSheet> {
               prefixIcon: Icon(Icons.store_outlined),
             ),
           ),
+          _SuggestionChips(
+            options: clubSuggestions(),
+            selected: clubController.text,
+            maxVisible: 8,
+            onSelected: loading
+                ? null
+                : (value) => setState(() => clubController.text = value),
+          ),
           const SizedBox(height: 10),
           TextField(
             controller: dateController,
             enabled: !loading,
+            readOnly: true,
+            onTap: loading ? null : pickDateTime,
             decoration: const InputDecoration(
               labelText: 'Дата и время',
               hintText: '25.07.26 19:00',
               prefixIcon: Icon(Icons.event_outlined),
+              suffixIcon: Icon(Icons.expand_more),
             ),
           ),
           const SizedBox(height: 10),
           TextField(
             controller: disciplineController,
             enabled: !loading,
+            readOnly: true,
+            onTap: loading ? null : pickDiscipline,
             decoration: const InputDecoration(
               labelText: 'Дисциплина',
               prefixIcon: Icon(Icons.pool_outlined),
+              suffixIcon: Icon(Icons.expand_more),
             ),
+          ),
+          _SuggestionChips(
+            options: disciplineSuggestions(),
+            selected: disciplineController.text,
+            maxVisible: 4,
+            onSelected: loading
+                ? null
+                : (value) => setState(() => disciplineController.text = value),
           ),
           const SizedBox(height: 10),
           TextField(
@@ -1074,6 +1241,53 @@ class _TournamentTabSpec {
   final TournamentStatus status;
   final String label;
   final IconData icon;
+}
+
+class _SuggestionChips extends StatelessWidget {
+  const _SuggestionChips({
+    required this.options,
+    required this.selected,
+    required this.maxVisible,
+    required this.onSelected,
+  });
+
+  final List<String> options;
+  final String selected;
+  final int maxVisible;
+  final ValueChanged<String>? onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final normalized = selected.trim().toLowerCase();
+    final visible = options
+        .where((option) => option.trim().isNotEmpty)
+        .where((option) => option.trim().toLowerCase() != normalized)
+        .take(maxVisible)
+        .toList();
+    if (visible.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final option in visible)
+              ActionChip(
+                label: Text(option),
+                visualDensity: VisualDensity.compact,
+                onPressed: onSelected == null
+                    ? null
+                    : () => onSelected!(option),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _TournamentTabBar extends StatelessWidget {
@@ -1350,6 +1564,321 @@ class _LlbLoginSuccess {
   final String? playerId;
 }
 
+class ClubSummary {
+  const ClubSummary({
+    required this.name,
+    required this.city,
+    required this.tournamentsCount,
+  });
+
+  final String name;
+  final String city;
+  final int tournamentsCount;
+
+  String get searchText => '$name $city'.toLowerCase();
+  String get mapQuery => '$name, $city';
+}
+
+class ClubsPage extends StatefulWidget {
+  const ClubsPage({super.key, required this.clubs, required this.initialCity});
+
+  final List<ClubSummary> clubs;
+  final String initialCity;
+
+  @override
+  State<ClubsPage> createState() => _ClubsPageState();
+}
+
+class _ClubsPageState extends State<ClubsPage> {
+  final TextEditingController searchController = TextEditingController();
+  late ClubSummary? selectedClub = _initialClub();
+  String search = '';
+
+  @override
+  void dispose() {
+    searchController.dispose();
+    super.dispose();
+  }
+
+  ClubSummary? _initialClub() {
+    for (final club in widget.clubs) {
+      if (club.city.toLowerCase() == widget.initialCity.toLowerCase()) {
+        return club;
+      }
+    }
+    return widget.clubs.isEmpty ? null : widget.clubs.first;
+  }
+
+  List<ClubSummary> get visibleClubs {
+    final normalized = search.trim().toLowerCase();
+    if (normalized.isEmpty) {
+      return widget.clubs;
+    }
+    return widget.clubs
+        .where((club) => club.searchText.contains(normalized))
+        .toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final clubs = visibleClubs;
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Клубы')),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
+            child: Column(
+              children: [
+                _ClubMapPreview(club: selectedClub),
+                const SizedBox(height: 12),
+                SearchBar(
+                  controller: searchController,
+                  hintText: 'Клуб или город',
+                  elevation: const WidgetStatePropertyAll(0),
+                  constraints: const BoxConstraints(minHeight: 48),
+                  leading: const Icon(Icons.search),
+                  trailing: [
+                    if (search.isNotEmpty)
+                      IconButton(
+                        tooltip: 'Очистить',
+                        onPressed: () {
+                          searchController.clear();
+                          setState(() => search = '');
+                        },
+                        icon: const Icon(Icons.close),
+                      ),
+                  ],
+                  onChanged: (value) => setState(() => search = value),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: clubs.isEmpty
+                ? const _EmptyState(
+                    icon: Icons.store_mall_directory_outlined,
+                    title: 'Клубы не найдены',
+                    text: 'Клубы собираются из загруженных турниров.',
+                  )
+                : ListView.separated(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    itemCount: clubs.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: 8),
+                    itemBuilder: (context, index) {
+                      final club = clubs[index];
+                      final selected =
+                          selectedClub?.name == club.name &&
+                          selectedClub?.city == club.city;
+                      return Card(
+                        child: ListTile(
+                          leading: CircleAvatar(
+                            backgroundColor: selected
+                                ? Theme.of(context).colorScheme.primary
+                                : Theme.of(
+                                    context,
+                                  ).colorScheme.primaryContainer,
+                            foregroundColor: selected
+                                ? Theme.of(context).colorScheme.onPrimary
+                                : Theme.of(
+                                    context,
+                                  ).colorScheme.onPrimaryContainer,
+                            child: const Icon(Icons.store_outlined),
+                          ),
+                          title: Text(
+                            club.name,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          subtitle: Text(
+                            '${club.city} · турниров: ${club.tournamentsCount}',
+                          ),
+                          trailing: selected ? const Icon(Icons.map) : null,
+                          onTap: () => setState(() => selectedClub = club),
+                        ),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ClubMapPreview extends StatefulWidget {
+  const _ClubMapPreview({required this.club});
+
+  final ClubSummary? club;
+
+  @override
+  State<_ClubMapPreview> createState() => _ClubMapPreviewState();
+}
+
+class _ClubMapPreviewState extends State<_ClubMapPreview> {
+  static const _mapboxToken = String.fromEnvironment(
+    'MAPBOX_ACCESS_TOKEN',
+    defaultValue: '',
+  );
+
+  Future<_MapPoint?>? pointFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    pointFuture = _geocode(widget.club);
+  }
+
+  @override
+  void didUpdateWidget(covariant _ClubMapPreview oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.club?.mapQuery != widget.club?.mapQuery) {
+      pointFuture = _geocode(widget.club);
+    }
+  }
+
+  Future<_MapPoint?> _geocode(ClubSummary? club) async {
+    if (club == null) {
+      return null;
+    }
+    if (_mapboxToken.isEmpty) {
+      return null;
+    }
+    final uri = Uri.https(
+      'api.mapbox.com',
+      '/geocoding/v5/mapbox.places/${Uri.encodeComponent(club.mapQuery)}.json',
+      {
+        'access_token': _mapboxToken,
+        'limit': '1',
+        'language': 'ru',
+        'country': 'ru',
+      },
+    );
+    try {
+      final response = await http.get(uri).timeout(const Duration(seconds: 8));
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        return null;
+      }
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final features = data['features'] as List<dynamic>? ?? const [];
+      if (features.isEmpty) {
+        return null;
+      }
+      final center = (features.first as Map<String, dynamic>)['center'];
+      if (center is! List || center.length < 2) {
+        return null;
+      }
+      final longitude = (center[0] as num).toDouble();
+      final latitude = (center[1] as num).toDouble();
+      return _MapPoint(latitude: latitude, longitude: longitude);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String _staticMapUrl(_MapPoint point) {
+    final marker =
+        'pin-s+0f6f55(${point.longitude.toStringAsFixed(6)},'
+        '${point.latitude.toStringAsFixed(6)})';
+    return Uri.https(
+      'api.mapbox.com',
+      '/styles/v1/mapbox/streets-v12/static/'
+          '$marker/${point.longitude.toStringAsFixed(6)},'
+          '${point.latitude.toStringAsFixed(6)},13,0/900x420@2x',
+      {'access_token': _mapboxToken},
+    ).toString();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final club = widget.club;
+    final scheme = Theme.of(context).colorScheme;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: AspectRatio(
+        aspectRatio: 16 / 9,
+        child: DecoratedBox(
+          decoration: BoxDecoration(color: scheme.surfaceContainerHighest),
+          child: club == null
+              ? const _EmptyState(
+                  icon: Icons.map_outlined,
+                  title: 'Нет клубов',
+                  text: 'Клубы появятся после загрузки турниров.',
+                )
+              : FutureBuilder<_MapPoint?>(
+                  future: pointFuture,
+                  builder: (context, snapshot) {
+                    final point = snapshot.data;
+                    if (snapshot.connectionState != ConnectionState.done) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    if (point == null) {
+                      return _EmptyState(
+                        icon: Icons.location_off_outlined,
+                        title: club.name,
+                        text: 'Mapbox не нашел координаты: ${club.city}.',
+                      );
+                    }
+                    return Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        Image.network(
+                          _staticMapUrl(point),
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, _, _) => _EmptyState(
+                            icon: Icons.map_outlined,
+                            title: club.name,
+                            text: 'Не удалось загрузить карту Mapbox.',
+                          ),
+                        ),
+                        Positioned(
+                          left: 12,
+                          right: 12,
+                          bottom: 12,
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: scheme.surface.withValues(alpha: 0.92),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Padding(
+                              padding: const EdgeInsets.all(10),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    club.name,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleSmall
+                                        ?.copyWith(fontWeight: FontWeight.w800),
+                                  ),
+                                  Text(club.city),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MapPoint {
+  const _MapPoint({required this.latitude, required this.longitude});
+
+  final double latitude;
+  final double longitude;
+}
+
 class _LlbLoginDialog extends StatefulWidget {
   const _LlbLoginDialog();
 
@@ -1511,6 +2040,7 @@ class _SettingsDrawer extends StatelessWidget {
     required this.repository,
     required this.selectedCity,
     required this.selectedDiscipline,
+    required this.clubs,
     required this.llbUsername,
     required this.llbPlayerId,
     required this.llbSessionValid,
@@ -1524,6 +2054,7 @@ class _SettingsDrawer extends StatelessWidget {
   final LeagueRepository repository;
   final String selectedCity;
   final DisciplineFilter selectedDiscipline;
+  final List<ClubSummary> clubs;
   final String? llbUsername;
   final String? llbPlayerId;
   final bool llbSessionValid;
@@ -1605,6 +2136,23 @@ class _SettingsDrawer extends StatelessWidget {
                     ),
                   ],
                   const SizedBox(height: 18),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.store_mall_directory_outlined),
+                    title: const Text('Клубы'),
+                    subtitle: Text('${clubs.length} из турниров LLB'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => ClubsPage(
+                            clubs: clubs,
+                            initialCity: selectedCity,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
                   ListTile(
                     contentPadding: EdgeInsets.zero,
                     leading: const Icon(Icons.settings_outlined),
