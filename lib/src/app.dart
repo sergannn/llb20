@@ -3135,10 +3135,13 @@ class _PlayerTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final participantSummary = player.participantSummary;
+    final discipline = player.discipline.trim() == 'Заявка LLB'
+        ? ''
+        : player.discipline;
     final meta = [
       if (player.city.isNotEmpty) player.city,
       if (player.club.isNotEmpty) player.club,
-      if (player.discipline.isNotEmpty) player.discipline,
+      if (discipline.isNotEmpty) discipline,
       if (participantSummary.isNotEmpty) participantSummary,
     ].join(' · ');
     final canOpenProfile = player.hasRealLlbId;

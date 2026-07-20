@@ -521,9 +521,7 @@ class ApiLeagueRepository implements LeagueRepository {
       name: _text(json['name'], 'Игрок'),
       city: _text(json['city']),
       club: _text(json['country']),
-      discipline: ratings.isEmpty
-          ? 'Заявка LLB'
-          : _disciplineSummary(ratings, ''),
+      discipline: ratings.isEmpty ? '' : _disciplineSummary(ratings, ''),
       rating: _intValue(json['best_elo']) ?? _intValue(json['elo']) ?? 0,
       avatarUrl: _text(json['avatar_url']),
       ratings: ratings,
