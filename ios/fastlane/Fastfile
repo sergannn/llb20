@@ -37,8 +37,8 @@ platform :ios do
       workspace: "Runner.xcworkspace",
       scheme: "Runner",
       export_method: "app-store",
-      xcargs: "-allowProvisioningUpdates CODE_SIGN_IDENTITY=\"Apple Distribution\"",
-      export_xcargs: "-allowProvisioningUpdates CODE_SIGN_IDENTITY=\"Apple Distribution\""
+      xcargs: "-allowProvisioningUpdates CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM=W3N4W6AVQA PROVISIONING_PROFILE_SPECIFIER=\"com.ser.tan.example AppStore\" CODE_SIGN_IDENTITY=\"Apple Distribution\"",
+      export_xcargs: "-allowProvisioningUpdates CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM=W3N4W6AVQA PROVISIONING_PROFILE_SPECIFIER=\"com.ser.tan.example AppStore\" CODE_SIGN_IDENTITY=\"Apple Distribution\""
     )
 
     upload_to_testflight(
