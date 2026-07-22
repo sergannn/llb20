@@ -3386,8 +3386,12 @@ class _TournamentDetailsPageState extends State<TournamentDetailsPage> {
                           : '$participantsLabel / ${tournament.capacity}',
                     ),
                     _DetailRow(
-                      label: 'Сетка',
-                      value: 'Открыть',
+                      label: tournament.hasExternalBracket
+                          ? 'Сетка'
+                          : 'Карточка',
+                      value: tournament.hasExternalBracket
+                          ? 'Открыть'
+                          : 'Открыть в приложении',
                       onTap: () => openBracket(context),
                     ),
                   ],

@@ -236,6 +236,7 @@ class Tournament {
     required this.bracketUrl,
     required this.players,
     required this.matches,
+    this.appCreated = false,
     this.media = const [],
   });
 
@@ -253,6 +254,7 @@ class Tournament {
   final String bracketUrl;
   final List<Player> players;
   final List<MatchInfo> matches;
+  final bool appCreated;
   final List<TournamentMedia> media;
 
   DateTime? get startsAt {
@@ -292,9 +294,12 @@ class Tournament {
       bracketUrl: bracketUrl,
       players: players ?? this.players,
       matches: matches ?? this.matches,
+      appCreated: appCreated,
       media: media ?? this.media,
     );
   }
+
+  bool get hasExternalBracket => !appCreated;
 
   bool matchesQuery(String query) {
     final normalized = query.trim().toLowerCase();

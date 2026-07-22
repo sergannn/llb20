@@ -478,7 +478,7 @@ class ApiLeagueRepository implements LeagueRepository {
       title: title,
       city: _text(json['city'], _cityFromTitle(title)),
       club: _text(json['club']),
-      discipline: _disciplineFromTitle(title),
+      discipline: _text(json['discipline'], _disciplineFromTitle(title)),
       level: _tournamentSectionLabel(status),
       dateLabel: _text(json['date_text']),
       playersCount: _intValue(json['participants_count']) ?? 0,
@@ -493,6 +493,7 @@ class ApiLeagueRepository implements LeagueRepository {
           .map(_participantFromJson)
           .toList(),
       matches: matches,
+      appCreated: _boolValue(json['app_created']),
       media: (json['media'] as List<dynamic>? ?? const [])
           .whereType<Map<String, dynamic>>()
           .map(_tournamentMediaFromJson)
@@ -662,6 +663,14 @@ class ApiLeagueRepository implements LeagueRepository {
       return value;
     }
     return int.tryParse('${value ?? ''}');
+  }
+
+  bool _boolValue(dynamic value) {
+    if (value is bool) {
+      return value;
+    }
+    final text = '$value'.trim().toLowerCase();
+    return text == '1' || text == 'true' || text == 'yes';
   }
 
   String _disciplineLabel(String keys) {
