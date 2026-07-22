@@ -47,6 +47,11 @@ class _LeagueHomePageState extends State<LeagueHomePage> {
   static const _llbUsernameKey = 'llb_username';
   static const _llbCookiesKey = 'llb_cookies';
   static const _llbPlayerIdKey = 'llb_player_id';
+  static const _appUserIdKey = 'app_user_id';
+  static const _appUsernameKey = 'app_username';
+  static const _appDisplayNameKey = 'app_display_name';
+  static const _appCityKey = 'app_city';
+  static const _appTokenKey = 'app_token';
   static const _initialSearch = String.fromEnvironment('LLB_INITIAL_SEARCH');
   static const _initialTournamentId = String.fromEnvironment(
     'LLB_OPEN_TOURNAMENT_ID',
@@ -314,6 +319,21 @@ class _LeagueHomePageState extends State<LeagueHomePage> {
 
   List<ClubSummary> clubSummaries() {
     final byKey = <String, ClubSummary>{};
+    final storedKeys = <String>{};
+    for (final club in repository.clubs()) {
+      final name = club.name.trim();
+      final city = club.city.trim();
+      if (name.isEmpty || city.isEmpty) {
+        continue;
+      }
+      final key = '${city.toLowerCase()}::$name'.toLowerCase();
+      storedKeys.add(key);
+      byKey[key] = ClubSummary(
+        name: name,
+        city: city,
+        tournamentsCount: club.tournamentsCount,
+      );
+    }
     for (final tournament in repository.tournaments()) {
       final name = tournament.club.trim();
       final city = tournament.city.trim();
@@ -321,6 +341,9 @@ class _LeagueHomePageState extends State<LeagueHomePage> {
         continue;
       }
       final key = '${city.toLowerCase()}::$name'.toLowerCase();
+      if (storedKeys.contains(key)) {
+        continue;
+      }
       final previous = byKey[key];
       byKey[key] = ClubSummary(
         name: name,
@@ -944,6 +967,7 @@ class _CreateTournamentSheetState extends State<_CreateTournamentSheet> {
   late final TextEditingController disciplineController = TextEditingController(
     text: widget.initialDiscipline,
   );
+  String tournamentType = 'single elimination';
   final TextEditingController capacityController = TextEditingController(
     text: '32',
   );
@@ -984,6 +1008,7 @@ class _CreateTournamentSheetState extends State<_CreateTournamentSheet> {
         club: club,
         dateText: dateText,
         discipline: discipline.isEmpty ? 'Пирамида' : discipline,
+        tournamentType: tournamentType,
         capacity: capacity,
         createdBy: 'llb-mobile',
       );
@@ -1195,6 +1220,33 @@ class _CreateTournamentSheetState extends State<_CreateTournamentSheet> {
             onSelected: loading
                 ? null
                 : (value) => setState(() => disciplineController.text = value),
+          ),
+          const SizedBox(height: 10),
+          DropdownButtonFormField<String>(
+            initialValue: tournamentType,
+            items: const [
+              DropdownMenuItem(
+                value: 'single elimination',
+                child: Text('Одиночное выбывание'),
+              ),
+              DropdownMenuItem(
+                value: 'double elimination',
+                child: Text('Двойное выбывание'),
+              ),
+              DropdownMenuItem(value: 'round robin', child: Text('Круговая')),
+              DropdownMenuItem(value: 'swiss', child: Text('Swiss')),
+            ],
+            onChanged: loading
+                ? null
+                : (value) {
+                    if (value != null) {
+                      setState(() => tournamentType = value);
+                    }
+                  },
+            decoration: const InputDecoration(
+              labelText: 'Формат сетки',
+              prefixIcon: Icon(Icons.account_tree_outlined),
+            ),
           ),
           const SizedBox(height: 10),
           TextField(
@@ -1579,6 +1631,8 @@ class ClubSummary {
   String get mapQuery => '$name, $city';
 }
 
+enum _ClubsView { map, list }
+
 class ClubsPage extends StatefulWidget {
   const ClubsPage({super.key, required this.clubs, required this.initialCity});
 
@@ -1592,6 +1646,8 @@ class ClubsPage extends StatefulWidget {
 class _ClubsPageState extends State<ClubsPage> {
   final TextEditingController searchController = TextEditingController();
   late ClubSummary? selectedClub = _initialClub();
+  late String selectedCity = widget.initialCity;
+  _ClubsView view = _ClubsView.map;
   String search = '';
 
   @override
@@ -1611,12 +1667,24 @@ class _ClubsPageState extends State<ClubsPage> {
 
   List<ClubSummary> get visibleClubs {
     final normalized = search.trim().toLowerCase();
-    if (normalized.isEmpty) {
-      return widget.clubs;
-    }
-    return widget.clubs
-        .where((club) => club.searchText.contains(normalized))
+    return widget.clubs.where((club) {
+      final matchesCity =
+          selectedCity.trim().isEmpty ||
+          club.city.toLowerCase() == selectedCity.toLowerCase();
+      final matchesSearch =
+          normalized.isEmpty || club.searchText.contains(normalized);
+      return matchesCity && matchesSearch;
+    }).toList();
+  }
+
+  List<String> get availableCities {
+    final cities = widget.clubs
+        .map((club) => club.city.trim())
+        .where((city) => city.isNotEmpty)
+        .toSet()
         .toList();
+    cities.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    return cities;
   }
 
   @override
@@ -1631,11 +1699,9 @@ class _ClubsPageState extends State<ClubsPage> {
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
             child: Column(
               children: [
-                _ClubMapPreview(club: selectedClub),
-                const SizedBox(height: 12),
                 SearchBar(
                   controller: searchController,
-                  hintText: 'Клуб или город',
+                  hintText: 'Клуб в городе $selectedCity',
                   elevation: const WidgetStatePropertyAll(0),
                   constraints: const BoxConstraints(minHeight: 48),
                   leading: const Icon(Icons.search),
@@ -1652,15 +1718,69 @@ class _ClubsPageState extends State<ClubsPage> {
                   ],
                   onChanged: (value) => setState(() => search = value),
                 ),
+                if (availableCities.length > 1) ...[
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    height: 40,
+                    child: ListView.separated(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: availableCities.length,
+                      separatorBuilder: (_, _) => const SizedBox(width: 8),
+                      itemBuilder: (context, index) {
+                        final city = availableCities[index];
+                        return ChoiceChip(
+                          label: Text(city),
+                          selected:
+                              selectedCity.toLowerCase() == city.toLowerCase(),
+                          onSelected: (_) => setState(() {
+                            selectedCity = city;
+                            final cityClubs = widget.clubs.where(
+                              (club) =>
+                                  club.city.toLowerCase() == city.toLowerCase(),
+                            );
+                            selectedClub = cityClubs.isEmpty
+                                ? null
+                                : cityClubs.first;
+                          }),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 8),
+                SegmentedButton<_ClubsView>(
+                  segments: const [
+                    ButtonSegment(
+                      value: _ClubsView.map,
+                      icon: Icon(Icons.map_outlined),
+                      label: Text('Карта'),
+                    ),
+                    ButtonSegment(
+                      value: _ClubsView.list,
+                      icon: Icon(Icons.format_list_bulleted),
+                      label: Text('Список'),
+                    ),
+                  ],
+                  selected: {view},
+                  onSelectionChanged: (value) =>
+                      setState(() => view = value.single),
+                ),
               ],
             ),
           ),
           Expanded(
             child: clubs.isEmpty
-                ? const _EmptyState(
+                ? _EmptyState(
                     icon: Icons.store_mall_directory_outlined,
                     title: 'Клубы не найдены',
-                    text: 'Клубы собираются из загруженных турниров.',
+                    text: 'Для города $selectedCity клубы пока не загружены.',
+                  )
+                : view == _ClubsView.map
+                ? ListView(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    children: [
+                      _ClubMapPreview(clubs: clubs, selectedClub: selectedClub),
+                    ],
                   )
                 : ListView.separated(
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
@@ -1708,9 +1828,10 @@ class _ClubsPageState extends State<ClubsPage> {
 }
 
 class _ClubMapPreview extends StatefulWidget {
-  const _ClubMapPreview({required this.club});
+  const _ClubMapPreview({required this.clubs, required this.selectedClub});
 
-  final ClubSummary? club;
+  final List<ClubSummary> clubs;
+  final ClubSummary? selectedClub;
 
   @override
   State<_ClubMapPreview> createState() => _ClubMapPreviewState();
@@ -1722,29 +1843,34 @@ class _ClubMapPreviewState extends State<_ClubMapPreview> {
     defaultValue: '',
   );
 
-  Future<_MapPoint?>? pointFuture;
+  Future<List<_ClubMapPoint>>? pointsFuture;
 
   @override
   void initState() {
     super.initState();
-    pointFuture = _geocode(widget.club);
+    pointsFuture = _geocodeClubs(widget.clubs);
   }
 
   @override
   void didUpdateWidget(covariant _ClubMapPreview oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.club?.mapQuery != widget.club?.mapQuery) {
-      pointFuture = _geocode(widget.club);
+    if (_clubsSignature(oldWidget.clubs) != _clubsSignature(widget.clubs)) {
+      pointsFuture = _geocodeClubs(widget.clubs);
     }
   }
 
-  Future<_MapPoint?> _geocode(ClubSummary? club) async {
-    if (club == null) {
-      return null;
-    }
+  String _clubsSignature(List<ClubSummary> clubs) =>
+      clubs.map((club) => club.mapQuery).join('|');
+
+  Future<List<_ClubMapPoint>> _geocodeClubs(List<ClubSummary> clubs) async {
     if (_mapboxToken.isEmpty) {
-      return null;
+      return const [];
     }
+    final points = await Future.wait(clubs.take(25).map(_geocode));
+    return points.whereType<_ClubMapPoint>().toList();
+  }
+
+  Future<_ClubMapPoint?> _geocode(ClubSummary club) async {
     final uri = Uri.https(
       'api.mapbox.com',
       '/geocoding/v5/mapbox.places/${Uri.encodeComponent(club.mapQuery)}.json',
@@ -1769,103 +1895,102 @@ class _ClubMapPreviewState extends State<_ClubMapPreview> {
       if (center is! List || center.length < 2) {
         return null;
       }
-      final longitude = (center[0] as num).toDouble();
-      final latitude = (center[1] as num).toDouble();
-      return _MapPoint(latitude: latitude, longitude: longitude);
+      return _ClubMapPoint(
+        club: club,
+        point: _MapPoint(
+          latitude: (center[1] as num).toDouble(),
+          longitude: (center[0] as num).toDouble(),
+        ),
+      );
     } catch (_) {
       return null;
     }
   }
 
-  String _staticMapUrl(_MapPoint point) {
-    final marker =
-        'pin-s+0f6f55(${point.longitude.toStringAsFixed(6)},'
-        '${point.latitude.toStringAsFixed(6)})';
+  String _staticMapUrl(List<_ClubMapPoint> points) {
+    final overlays = points
+        .map((item) {
+          final selected =
+              widget.selectedClub?.name == item.club.name &&
+              widget.selectedClub?.city == item.club.city;
+          final color = selected ? '0b5f49' : '0f6f55';
+          final point = item.point;
+          return 'pin-s+$color(${point.longitude.toStringAsFixed(6)},'
+              '${point.latitude.toStringAsFixed(6)})';
+        })
+        .join(',');
     return Uri.https(
       'api.mapbox.com',
-      '/styles/v1/mapbox/streets-v12/static/'
-          '$marker/${point.longitude.toStringAsFixed(6)},'
-          '${point.latitude.toStringAsFixed(6)},13,0/900x420@2x',
+      '/styles/v1/mapbox/streets-v12/static/$overlays/auto/900x700@2x',
       {'access_token': _mapboxToken},
     ).toString();
   }
 
   @override
   Widget build(BuildContext context) {
-    final club = widget.club;
     final scheme = Theme.of(context).colorScheme;
     return ClipRRect(
       borderRadius: BorderRadius.circular(8),
       child: AspectRatio(
-        aspectRatio: 16 / 9,
+        aspectRatio: 4 / 5,
         child: DecoratedBox(
           decoration: BoxDecoration(color: scheme.surfaceContainerHighest),
-          child: club == null
-              ? const _EmptyState(
+          child: FutureBuilder<List<_ClubMapPoint>>(
+            future: pointsFuture,
+            builder: (context, snapshot) {
+              final points = snapshot.data ?? const [];
+              if (snapshot.connectionState != ConnectionState.done) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              if (_mapboxToken.isEmpty) {
+                return const _EmptyState(
                   icon: Icons.map_outlined,
-                  title: 'Нет клубов',
-                  text: 'Клубы появятся после загрузки турниров.',
-                )
-              : FutureBuilder<_MapPoint?>(
-                  future: pointFuture,
-                  builder: (context, snapshot) {
-                    final point = snapshot.data;
-                    if (snapshot.connectionState != ConnectionState.done) {
-                      return const Center(child: CircularProgressIndicator());
-                    }
-                    if (point == null) {
-                      return _EmptyState(
-                        icon: Icons.location_off_outlined,
-                        title: club.name,
-                        text: 'Mapbox не нашел координаты: ${club.city}.',
-                      );
-                    }
-                    return Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        Image.network(
-                          _staticMapUrl(point),
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, _, _) => _EmptyState(
-                            icon: Icons.map_outlined,
-                            title: club.name,
-                            text: 'Не удалось загрузить карту Mapbox.',
-                          ),
+                  title: 'Карта недоступна',
+                  text: 'Для карты нужен MAPBOX_ACCESS_TOKEN при сборке.',
+                );
+              }
+              if (points.isEmpty) {
+                return const _EmptyState(
+                  icon: Icons.location_off_outlined,
+                  title: 'Координаты не найдены',
+                  text: 'Mapbox не нашел клубы выбранного города.',
+                );
+              }
+              return Stack(
+                fit: StackFit.expand,
+                children: [
+                  Image.network(
+                    _staticMapUrl(points),
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => const _EmptyState(
+                      icon: Icons.map_outlined,
+                      title: 'Карта не загрузилась',
+                      text: 'Не удалось загрузить карту Mapbox.',
+                    ),
+                  ),
+                  Positioned(
+                    left: 12,
+                    right: 12,
+                    bottom: 12,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: scheme.surface.withValues(alpha: 0.92),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(10),
+                        child: Text(
+                          '${points.length} клубов на карте',
+                          style: Theme.of(context).textTheme.titleSmall
+                              ?.copyWith(fontWeight: FontWeight.w800),
                         ),
-                        Positioned(
-                          left: 12,
-                          right: 12,
-                          bottom: 12,
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              color: scheme.surface.withValues(alpha: 0.92),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Padding(
-                              padding: const EdgeInsets.all(10),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(
-                                    club.name,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .titleSmall
-                                        ?.copyWith(fontWeight: FontWeight.w800),
-                                  ),
-                                  Text(club.city),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    );
-                  },
-                ),
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
         ),
       ),
     );
@@ -1877,6 +2002,13 @@ class _MapPoint {
 
   final double latitude;
   final double longitude;
+}
+
+class _ClubMapPoint {
+  const _ClubMapPoint({required this.club, required this.point});
+
+  final ClubSummary club;
+  final _MapPoint point;
 }
 
 class MediaLibraryPage extends StatefulWidget {
@@ -2515,6 +2647,185 @@ class _LlbLoginDialogState extends State<_LlbLoginDialog> {
   }
 }
 
+class _AppAuthDialog extends StatefulWidget {
+  const _AppAuthDialog();
+
+  @override
+  State<_AppAuthDialog> createState() => _AppAuthDialogState();
+}
+
+class _AppAuthDialogState extends State<_AppAuthDialog> {
+  final TextEditingController usernameController = TextEditingController();
+  final TextEditingController displayNameController = TextEditingController();
+  final TextEditingController cityController = TextEditingController();
+  final TextEditingController passwordController = TextEditingController();
+  bool register = false;
+  bool loading = false;
+  bool obscurePassword = true;
+  String? error;
+
+  @override
+  void dispose() {
+    usernameController.dispose();
+    displayNameController.dispose();
+    cityController.dispose();
+    passwordController.dispose();
+    super.dispose();
+  }
+
+  Future<void> submit() async {
+    final username = usernameController.text.trim();
+    final password = passwordController.text;
+    final displayName = displayNameController.text.trim();
+    final city = cityController.text.trim();
+    if (username.isEmpty || password.isEmpty) {
+      setState(() => error = 'Введите логин и пароль.');
+      return;
+    }
+    if (register && password.length < 6) {
+      setState(() => error = 'Пароль должен быть не короче 6 символов.');
+      return;
+    }
+
+    setState(() {
+      loading = true;
+      error = null;
+    });
+
+    final client = AppAuthClient();
+    try {
+      final result = await client.authenticate(
+        register: register,
+        username: username,
+        password: password,
+        displayName: displayName.isEmpty ? username : displayName,
+        city: city,
+      );
+      if (!mounted) {
+        return;
+      }
+      Navigator.of(context).pop(result);
+    } catch (exception) {
+      if (mounted) {
+        setState(() => error = 'Не удалось войти: $exception');
+      }
+    } finally {
+      client.close();
+      if (mounted) {
+        setState(() => loading = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Аккаунт приложения'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SegmentedButton<bool>(
+              segments: const [
+                ButtonSegment(value: false, label: Text('Вход')),
+                ButtonSegment(value: true, label: Text('Регистрация')),
+              ],
+              selected: {register},
+              onSelectionChanged: loading
+                  ? null
+                  : (value) => setState(() => register = value.single),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: usernameController,
+              enabled: !loading,
+              autocorrect: false,
+              textInputAction: TextInputAction.next,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                labelText: 'Логин',
+                prefixIcon: Icon(Icons.person_outline),
+              ),
+            ),
+            if (register) ...[
+              const SizedBox(height: 12),
+              TextField(
+                controller: displayNameController,
+                enabled: !loading,
+                textInputAction: TextInputAction.next,
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  labelText: 'Имя в турнирах',
+                  prefixIcon: Icon(Icons.badge_outlined),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: cityController,
+                enabled: !loading,
+                textInputAction: TextInputAction.next,
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  labelText: 'Город',
+                  prefixIcon: Icon(Icons.place_outlined),
+                ),
+              ),
+            ],
+            const SizedBox(height: 12),
+            TextField(
+              controller: passwordController,
+              enabled: !loading,
+              obscureText: obscurePassword,
+              onSubmitted: (_) => loading ? null : submit(),
+              decoration: InputDecoration(
+                border: const OutlineInputBorder(),
+                labelText: 'Пароль',
+                prefixIcon: const Icon(Icons.lock_outline),
+                suffixIcon: IconButton(
+                  tooltip: obscurePassword ? 'Показать' : 'Скрыть',
+                  onPressed: loading
+                      ? null
+                      : () =>
+                            setState(() => obscurePassword = !obscurePassword),
+                  icon: Icon(
+                    obscurePassword
+                        ? Icons.visibility_outlined
+                        : Icons.visibility_off_outlined,
+                  ),
+                ),
+              ),
+            ),
+            if (error != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                error!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: loading ? null : () => Navigator.of(context).pop(),
+          child: const Text('Отмена'),
+        ),
+        FilledButton.icon(
+          onPressed: loading ? null : submit,
+          icon: loading
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : Icon(register ? Icons.person_add_alt_1 : Icons.login),
+          label: Text(register ? 'Создать' : 'Войти'),
+        ),
+      ],
+    );
+  }
+}
+
 class _SettingsDrawer extends StatelessWidget {
   const _SettingsDrawer({
     required this.repository,
@@ -2620,7 +2931,7 @@ class _SettingsDrawer extends StatelessWidget {
                     contentPadding: EdgeInsets.zero,
                     leading: const Icon(Icons.store_mall_directory_outlined),
                     title: const Text('Клубы'),
-                    subtitle: Text('${clubs.length} из турниров LLB'),
+                    subtitle: Text('${clubs.length} клубов'),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () {
                       Navigator.of(context).push(
@@ -3192,6 +3503,27 @@ class _TournamentDetailsPageState extends State<TournamentDetailsPage> {
   }
 
   Future<void> loadRegistrationSession() async {
+    final savedState = await secureStorage.read(
+      key: '$_registrationStatePrefix${widget.tournament.id}',
+    );
+    if (widget.tournament.appCreated || tournament.appCreated) {
+      final appUsername = await secureStorage.read(
+        key: _LeagueHomePageState._appUsernameKey,
+      );
+      final appUserId = await secureStorage.read(
+        key: _LeagueHomePageState._appUserIdKey,
+      );
+      if (mounted) {
+        setState(() {
+          llbUsername = appUsername;
+          llbPlayerId = appUserId;
+          llbSessionValid = appUsername != null && appUsername.isNotEmpty;
+          registrationState = savedState;
+        });
+      }
+      return;
+    }
+
     final username = await secureStorage.read(
       key: _LeagueHomePageState._llbUsernameKey,
     );
@@ -3200,9 +3532,6 @@ class _TournamentDetailsPageState extends State<TournamentDetailsPage> {
     );
     final cookies = await secureStorage.read(
       key: _LeagueHomePageState._llbCookiesKey,
-    );
-    final savedState = await secureStorage.read(
-      key: '$_registrationStatePrefix${widget.tournament.id}',
     );
     if (username == null || cookies == null || cookies.isEmpty) {
       if (mounted) {
@@ -3244,6 +3573,10 @@ class _TournamentDetailsPageState extends State<TournamentDetailsPage> {
   }
 
   Future<void> showLoginDialog() async {
+    if (tournament.appCreated) {
+      await showAppAuthDialog();
+      return;
+    }
     final result = await showDialog<_LlbLoginSuccess>(
       context: context,
       barrierDismissible: false,
@@ -3259,7 +3592,48 @@ class _TournamentDetailsPageState extends State<TournamentDetailsPage> {
     }
   }
 
+  Future<void> showAppAuthDialog() async {
+    final result = await showDialog<AppAuthResult>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const _AppAuthDialog(),
+    );
+    if (result != null) {
+      await secureStorage.write(
+        key: _LeagueHomePageState._appUserIdKey,
+        value: result.id,
+      );
+      await secureStorage.write(
+        key: _LeagueHomePageState._appUsernameKey,
+        value: result.username,
+      );
+      await secureStorage.write(
+        key: _LeagueHomePageState._appDisplayNameKey,
+        value: result.displayName,
+      );
+      await secureStorage.write(
+        key: _LeagueHomePageState._appCityKey,
+        value: result.city,
+      );
+      await secureStorage.write(
+        key: _LeagueHomePageState._appTokenKey,
+        value: result.token,
+      );
+      await loadRegistrationSession();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Вход выполнен: ${result.username}')),
+        );
+      }
+    }
+  }
+
   Future<void> submitRegistrationAction(String action) async {
+    if (tournament.appCreated) {
+      await submitAppTournamentRegistrationAction(action);
+      return;
+    }
+
     final cookies = await secureStorage.read(
       key: _LeagueHomePageState._llbCookiesKey,
     );
@@ -3307,6 +3681,63 @@ class _TournamentDetailsPageState extends State<TournamentDetailsPage> {
       }
     } finally {
       client.close();
+      if (mounted) {
+        setState(() => registrationLoading = false);
+      }
+    }
+  }
+
+  Future<void> submitAppTournamentRegistrationAction(String action) async {
+    final username = llbUsername;
+    if (username == null || username.isEmpty) {
+      await showLoginDialog();
+      return;
+    }
+
+    setState(() {
+      registrationLoading = true;
+      registrationMessage = null;
+    });
+
+    try {
+      final displayName = await secureStorage.read(
+        key: _LeagueHomePageState._appDisplayNameKey,
+      );
+      final city = await secureStorage.read(
+        key: _LeagueHomePageState._appCityKey,
+      );
+      final result = await widget.repository.tournamentRegistrationAction(
+        tournament: tournament,
+        action: action,
+        username: username,
+        playerId: llbPlayerId,
+        name: displayName?.trim().isNotEmpty == true ? displayName! : username,
+        city: city?.trim().isNotEmpty == true ? city! : tournament.city,
+      );
+      final nextState = result.state == 'not_registered'
+          ? 'not_registered'
+          : 'registered';
+      await secureStorage.write(
+        key: '$_registrationStatePrefix${tournament.id}',
+        value: nextState,
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        registrationState = nextState;
+        registrationMessage = result.message;
+        tournament = tournament.copyWith(
+          players: result.participants,
+          playersCount: result.participantsCount,
+        );
+      });
+      await loadDetails();
+    } catch (exception) {
+      if (mounted) {
+        setState(() => registrationMessage = 'Ошибка API: $exception');
+      }
+    } finally {
       if (mounted) {
         setState(() => registrationLoading = false);
       }
@@ -3549,10 +3980,13 @@ class _TournamentRegistrationCard extends StatelessWidget {
     }
 
     final scheme = Theme.of(context).colorScheme;
+    final appTournament = tournament.appCreated;
     final isRegistered = state == 'registered';
     final known = state == 'registered' || state == 'not_registered';
     final stateText = username == null
-        ? 'Войдите в LLB, чтобы записаться на турнир.'
+        ? appTournament
+              ? 'Войдите или зарегистрируйтесь в приложении, чтобы записаться.'
+              : 'Войдите в LLB, чтобы записаться на турнир.'
         : isRegistered
         ? 'Вы записаны на этот турнир.'
         : state == 'not_registered'
@@ -3593,7 +4027,9 @@ class _TournamentRegistrationCard extends StatelessWidget {
             if (username != null) ...[
               const SizedBox(height: 4),
               Text(
-                sessionValid
+                appTournament
+                    ? 'Аккаунт приложения: $username${playerId == null || playerId!.isEmpty ? '' : ' · id $playerId'}'
+                    : sessionValid
                     ? 'Аккаунт: $username${playerId == null || playerId!.isEmpty ? '' : ' · id $playerId'}'
                     : 'Сессия LLB истекла.',
                 style: Theme.of(
@@ -3617,7 +4053,9 @@ class _TournamentRegistrationCard extends StatelessWidget {
               FilledButton.icon(
                 onPressed: loading ? null : onLogin,
                 icon: const Icon(Icons.login),
-                label: const Text('Войти в LLB'),
+                label: Text(
+                  appTournament ? 'Войти / регистрация' : 'Войти в LLB',
+                ),
               )
             else if (known || participantsKnown)
               isRegistered

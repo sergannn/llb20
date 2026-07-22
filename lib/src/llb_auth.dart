@@ -32,6 +32,78 @@ class LlbTournamentActionResult {
   final String? error;
 }
 
+class AppAuthResult {
+  const AppAuthResult({
+    required this.id,
+    required this.username,
+    required this.displayName,
+    required this.city,
+    required this.token,
+  });
+
+  final String id;
+  final String username;
+  final String displayName;
+  final String city;
+  final String token;
+}
+
+class AppAuthClient {
+  AppAuthClient({
+    http.Client? client,
+    this.apiBaseUrl = const String.fromEnvironment(
+      'LLB_API_BASE_URL',
+      defaultValue: 'https://llb.panfilius.ru/llb-api/',
+    ),
+  }) : _client = client ?? http.Client();
+
+  final http.Client _client;
+  final String apiBaseUrl;
+  static const _requestTimeout = Duration(seconds: 15);
+
+  Future<AppAuthResult> authenticate({
+    required bool register,
+    required String username,
+    required String password,
+    required String displayName,
+    required String city,
+  }) async {
+    final uri = Uri.parse(
+      apiBaseUrl,
+    ).replace(queryParameters: {'resource': 'app_auth'});
+    final response = await _client
+        .post(
+          uri,
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+          body: jsonEncode({
+            'action': register ? 'register' : 'login',
+            'username': username,
+            'password': password,
+            'display_name': displayName,
+            'city': city,
+          }),
+        )
+        .timeout(_requestTimeout);
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw StateError('${data['error'] ?? 'app_auth_failed'}');
+    }
+    final user = (data['user'] as Map<String, dynamic>?) ?? const {};
+    return AppAuthResult(
+      id: '${user['id'] ?? ''}',
+      username: '${user['username'] ?? username}',
+      displayName: '${user['display_name'] ?? displayName}',
+      city: '${user['city'] ?? city}',
+      token: '${user['token'] ?? ''}',
+    );
+  }
+
+  void close() => _client.close();
+}
+
 class LlbWebAuthClient {
   LlbWebAuthClient({
     http.Client? client,

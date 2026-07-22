@@ -9,6 +9,7 @@ abstract class LeagueRepository {
   List<Tournament> tournaments();
   List<Player> players();
   List<VideoStream> videoStreams();
+  List<ClubSummaryData> clubs();
   Future<void> load();
   Future<Player?> playerById(String id);
   Future<Tournament> createTournament({
@@ -17,8 +18,26 @@ abstract class LeagueRepository {
     required String club,
     required String dateText,
     required String discipline,
+    required String tournamentType,
     required int? capacity,
     required String createdBy,
+  });
+  Future<TournamentRegistrationResult> tournamentRegistrationAction({
+    required Tournament tournament,
+    required String action,
+    required String username,
+    required String? playerId,
+    required String name,
+    required String city,
+  });
+  Future<List<ClubSummaryData>> loadClubs({String city = ''});
+  Future<ClubSummaryData> createClub({
+    required String name,
+    required String city,
+    String address = '',
+    String phone = '',
+    String website = '',
+    String createdBy = '',
   });
   Future<List<TournamentMedia>> tournamentMedia(Tournament tournament);
   Future<TournamentMedia> uploadTournamentMedia({
@@ -42,6 +61,50 @@ abstract class LeagueRepository {
   });
   Future<Tournament> tournamentDetails(Tournament tournament);
   void dispose();
+}
+
+class TournamentRegistrationResult {
+  const TournamentRegistrationResult({
+    required this.ok,
+    required this.state,
+    required this.message,
+    required this.participants,
+    required this.participantsCount,
+  });
+
+  final bool ok;
+  final String state;
+  final String message;
+  final List<Player> participants;
+  final int participantsCount;
+}
+
+class ClubSummaryData {
+  const ClubSummaryData({
+    required this.name,
+    required this.city,
+    this.id = '',
+    this.address = '',
+    this.phone = '',
+    this.website = '',
+    this.latitude,
+    this.longitude,
+    this.tournamentsCount = 0,
+  });
+
+  final String id;
+  final String name;
+  final String city;
+  final String address;
+  final String phone;
+  final String website;
+  final double? latitude;
+  final double? longitude;
+  final int tournamentsCount;
+
+  String get searchText => '$name $city $address'.toLowerCase();
+  String get mapQuery =>
+      address.isEmpty ? '$name, $city' : '$name, $address, $city';
 }
 
 class ApiLeagueRepository implements LeagueRepository {
@@ -68,6 +131,7 @@ class ApiLeagueRepository implements LeagueRepository {
   List<Player> _players = const [];
   List<Tournament> _tournaments = const [];
   List<VideoStream> _videoStreams = const [];
+  List<ClubSummaryData> _clubs = const [];
 
   @override
   List<Player> players() => _players.isEmpty ? fallback.players() : _players;
@@ -79,6 +143,65 @@ class ApiLeagueRepository implements LeagueRepository {
   @override
   List<VideoStream> videoStreams() =>
       _videoStreams.isEmpty ? fallback.videoStreams() : _videoStreams;
+
+  @override
+  List<ClubSummaryData> clubs() => _clubs.isEmpty ? fallback.clubs() : _clubs;
+
+  @override
+  Future<List<ClubSummaryData>> loadClubs({String city = ''}) async {
+    try {
+      final rows = await _getList('clubs', {
+        if (city.trim().isNotEmpty) 'city': city.trim(),
+        'limit': '300',
+      });
+      _clubs = rows.map(_clubFromJson).toList();
+      return _clubs;
+    } catch (_) {
+      return clubs();
+    }
+  }
+
+  @override
+  Future<ClubSummaryData> createClub({
+    required String name,
+    required String city,
+    String address = '',
+    String phone = '',
+    String website = '',
+    String createdBy = '',
+  }) async {
+    final uri = Uri.parse(
+      baseUri,
+    ).replace(queryParameters: {'resource': 'clubs'});
+    final response = await client
+        .post(
+          uri,
+          headers: {'Content-Type': 'application/json; charset=utf-8'},
+          body: jsonEncode({
+            'name': name,
+            'city': city,
+            'address': address,
+            'phone': phone,
+            'website': website,
+            'created_by': createdBy,
+          }),
+        )
+        .timeout(_requestTimeout);
+    final json = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw StateError('LLB API ${json['error'] ?? response.statusCode}');
+    }
+    final club = _clubFromJson((json['item'] as Map<String, dynamic>?) ?? json);
+    _clubs = [
+      club,
+      ..._clubs.where(
+        (item) =>
+            item.name.toLowerCase() != club.name.toLowerCase() ||
+            item.city.toLowerCase() != club.city.toLowerCase(),
+      ),
+    ];
+    return club;
+  }
 
   @override
   Future<Tournament> tournamentDetails(Tournament tournament) async {
@@ -293,6 +416,7 @@ class ApiLeagueRepository implements LeagueRepository {
     required String club,
     required String dateText,
     required String discipline,
+    required String tournamentType,
     required int? capacity,
     required String createdBy,
   }) async {
@@ -309,6 +433,7 @@ class ApiLeagueRepository implements LeagueRepository {
             'club': club,
             'date_text': dateText,
             'discipline': discipline,
+            'tournament_type': tournamentType,
             'participants_limit': capacity,
             'created_by': createdBy,
           }),
@@ -323,6 +448,56 @@ class ApiLeagueRepository implements LeagueRepository {
     );
     _tournaments = [tournament, ..._tournaments];
     return tournament;
+  }
+
+  @override
+  Future<TournamentRegistrationResult> tournamentRegistrationAction({
+    required Tournament tournament,
+    required String action,
+    required String username,
+    required String? playerId,
+    required String name,
+    required String city,
+  }) async {
+    final normalizedAction = action == 'unregister' ? 'unregister' : 'register';
+    final uri = Uri.parse(
+      baseUri,
+    ).replace(queryParameters: {'resource': 'tournament_registration'});
+    final response = await client
+        .post(
+          uri,
+          headers: {'Content-Type': 'application/json; charset=utf-8'},
+          body: jsonEncode({
+            'tournament_id': tournament.id,
+            'action': normalizedAction,
+            'username': username,
+            'player_id': int.tryParse(playerId ?? ''),
+            'name': name.isEmpty ? username : name,
+            'city': city,
+          }),
+        )
+        .timeout(_requestTimeout);
+    final json = jsonDecode(response.body) as Map<String, dynamic>;
+    final ok =
+        response.statusCode >= 200 &&
+        response.statusCode < 300 &&
+        _boolValue(json['ok']);
+    if (!ok) {
+      final error = _text(json['error'], 'registration_failed');
+      throw StateError('LLB API $error');
+    }
+    final participants = (json['participants'] as List<dynamic>? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(_participantFromJson)
+        .toList();
+    return TournamentRegistrationResult(
+      ok: ok,
+      state: _text(json['state'], normalizedAction),
+      message: _text(json['message']),
+      participants: participants,
+      participantsCount:
+          _intValue(json['participants_count']) ?? participants.length,
+    );
   }
 
   Future<void> loadVideoStreams() async {
@@ -514,6 +689,20 @@ class ApiLeagueRepository implements LeagueRepository {
     );
   }
 
+  ClubSummaryData _clubFromJson(Map<String, dynamic> json) {
+    return ClubSummaryData(
+      id: _text(json['id']),
+      name: _text(json['name']),
+      city: _text(json['city']),
+      address: _text(json['address']),
+      phone: _text(json['phone']),
+      website: _text(json['website']),
+      latitude: _doubleValue(json['latitude']),
+      longitude: _doubleValue(json['longitude']),
+      tournamentsCount: _intValue(json['tournaments_count']) ?? 0,
+    );
+  }
+
   Player _participantFromJson(Map<String, dynamic> json) {
     final ratings = _ratingsFromJson(json);
     final playerId = '${json['player_id'] ?? ''}'.trim();
@@ -663,6 +852,13 @@ class ApiLeagueRepository implements LeagueRepository {
       return value;
     }
     return int.tryParse('${value ?? ''}');
+  }
+
+  double? _doubleValue(dynamic value) {
+    if (value is num) {
+      return value.toDouble();
+    }
+    return double.tryParse('${value ?? ''}');
   }
 
   bool _boolValue(dynamic value) {
@@ -827,6 +1023,24 @@ class EmptyLeagueRepository implements LeagueRepository {
   List<VideoStream> videoStreams() => const [];
 
   @override
+  List<ClubSummaryData> clubs() => const [];
+
+  @override
+  Future<List<ClubSummaryData>> loadClubs({String city = ''}) async => clubs();
+
+  @override
+  Future<ClubSummaryData> createClub({
+    required String name,
+    required String city,
+    String address = '',
+    String phone = '',
+    String website = '',
+    String createdBy = '',
+  }) async {
+    throw UnsupportedError('Club creation is not available');
+  }
+
+  @override
   Future<Player?> playerById(String id) async => null;
 
   @override
@@ -836,10 +1050,23 @@ class EmptyLeagueRepository implements LeagueRepository {
     required String club,
     required String dateText,
     required String discipline,
+    required String tournamentType,
     required int? capacity,
     required String createdBy,
   }) async {
     throw UnsupportedError('Tournament creation is not available');
+  }
+
+  @override
+  Future<TournamentRegistrationResult> tournamentRegistrationAction({
+    required Tournament tournament,
+    required String action,
+    required String username,
+    required String? playerId,
+    required String name,
+    required String city,
+  }) async {
+    throw UnsupportedError('Tournament registration is not available');
   }
 
   @override
@@ -908,6 +1135,7 @@ class MockLeagueRepository implements LeagueRepository {
     required String club,
     required String dateText,
     required String discipline,
+    required String tournamentType,
     required int? capacity,
     required String createdBy,
   }) async {
@@ -923,9 +1151,37 @@ class MockLeagueRepository implements LeagueRepository {
       capacity: capacity,
       matchesCount: 0,
       status: TournamentStatus.upcoming,
-      bracketUrl: 'https://www.llb.su/t/mock-created',
+      bracketUrl: 'https://challonge.com/mock_created',
       players: const [],
       matches: const [],
+      appCreated: true,
+    );
+  }
+
+  @override
+  Future<TournamentRegistrationResult> tournamentRegistrationAction({
+    required Tournament tournament,
+    required String action,
+    required String username,
+    required String? playerId,
+    required String name,
+    required String city,
+  }) async {
+    final registered = action != 'unregister';
+    final participant = Player(
+      id: playerId?.isNotEmpty == true ? playerId! : 'mock-$username',
+      name: name.isEmpty ? username : name,
+      city: city,
+      club: '',
+      discipline: tournament.discipline,
+      rating: 0,
+    );
+    return TournamentRegistrationResult(
+      ok: true,
+      state: registered ? 'registered' : 'not_registered',
+      message: registered ? 'Вы записаны на турнир.' : 'Запись отменена.',
+      participants: registered ? [participant] : const [],
+      participantsCount: registered ? 1 : 0,
     );
   }
 
@@ -980,6 +1236,37 @@ class MockLeagueRepository implements LeagueRepository {
 
   @override
   List<VideoStream> videoStreams() => const [];
+
+  @override
+  List<ClubSummaryData> clubs() => const [
+    ClubSummaryData(
+      name: 'ЦБС Ольгино',
+      city: 'Санкт-Петербург',
+      tournamentsCount: 2,
+    ),
+    ClubSummaryData(name: 'БАЗА', city: 'Санкт-Петербург', tournamentsCount: 1),
+  ];
+
+  @override
+  Future<List<ClubSummaryData>> loadClubs({String city = ''}) async => clubs();
+
+  @override
+  Future<ClubSummaryData> createClub({
+    required String name,
+    required String city,
+    String address = '',
+    String phone = '',
+    String website = '',
+    String createdBy = '',
+  }) async {
+    return ClubSummaryData(
+      name: name,
+      city: city,
+      address: address,
+      phone: phone,
+      website: website,
+    );
+  }
 
   @override
   Future<void> requestVideoStream({
