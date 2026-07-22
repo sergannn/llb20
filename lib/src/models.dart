@@ -299,7 +299,8 @@ class Tournament {
     );
   }
 
-  bool get hasExternalBracket => !appCreated;
+  bool get hasExternalBracket =>
+      !appCreated || bracketUrl.toLowerCase().contains('challonge.com');
 
   bool matchesQuery(String query) {
     final normalized = query.trim().toLowerCase();
