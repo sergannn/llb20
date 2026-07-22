@@ -1863,23 +1863,40 @@ class _ClubMapPreviewState extends State<_ClubMapPreview> {
       clubs.map((club) => club.mapQuery).join('|');
 
   Future<List<_ClubMapPoint>> _geocodeClubs(List<ClubSummary> clubs) async {
-    if (_mapboxToken.isEmpty) {
+    final token = await _loadMapboxToken();
+    if (token.isEmpty) {
       return const [];
     }
-    final points = await Future.wait(clubs.take(25).map(_geocode));
+    final points = await Future.wait(
+      clubs.take(25).map((club) => _geocode(club, token)),
+    );
     return points.whereType<_ClubMapPoint>().toList();
   }
 
-  Future<_ClubMapPoint?> _geocode(ClubSummary club) async {
+  Future<String> _loadMapboxToken() async {
+    if (_mapboxToken.isNotEmpty) {
+      return _mapboxToken;
+    }
+    final uri = Uri.parse(
+      'https://llb.panfilius.ru/llb-api/',
+    ).replace(queryParameters: {'resource': 'app_config'});
+    try {
+      final response = await http.get(uri).timeout(const Duration(seconds: 8));
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        return '';
+      }
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      return '${data['mapbox_access_token'] ?? ''}'.trim();
+    } catch (_) {
+      return '';
+    }
+  }
+
+  Future<_ClubMapPoint?> _geocode(ClubSummary club, String token) async {
     final uri = Uri.https(
       'api.mapbox.com',
       '/geocoding/v5/mapbox.places/${Uri.encodeComponent(club.mapQuery)}.json',
-      {
-        'access_token': _mapboxToken,
-        'limit': '1',
-        'language': 'ru',
-        'country': 'ru',
-      },
+      {'access_token': token, 'limit': '1', 'language': 'ru', 'country': 'ru'},
     );
     try {
       final response = await http.get(uri).timeout(const Duration(seconds: 8));
@@ -1897,6 +1914,7 @@ class _ClubMapPreviewState extends State<_ClubMapPreview> {
       }
       return _ClubMapPoint(
         club: club,
+        mapboxToken: token,
         point: _MapPoint(
           latitude: (center[1] as num).toDouble(),
           longitude: (center[0] as num).toDouble(),
@@ -1922,7 +1940,7 @@ class _ClubMapPreviewState extends State<_ClubMapPreview> {
     return Uri.https(
       'api.mapbox.com',
       '/styles/v1/mapbox/streets-v12/static/$overlays/auto/900x700@2x',
-      {'access_token': _mapboxToken},
+      {'access_token': points.first.mapboxToken},
     ).toString();
   }
 
@@ -1942,11 +1960,11 @@ class _ClubMapPreviewState extends State<_ClubMapPreview> {
               if (snapshot.connectionState != ConnectionState.done) {
                 return const Center(child: CircularProgressIndicator());
               }
-              if (_mapboxToken.isEmpty) {
+              if (points.isEmpty && _mapboxToken.isEmpty) {
                 return const _EmptyState(
                   icon: Icons.map_outlined,
                   title: 'Карта недоступна',
-                  text: 'Для карты нужен MAPBOX_ACCESS_TOKEN при сборке.',
+                  text: 'Не удалось получить Mapbox token.',
                 );
               }
               if (points.isEmpty) {
@@ -2005,10 +2023,15 @@ class _MapPoint {
 }
 
 class _ClubMapPoint {
-  const _ClubMapPoint({required this.club, required this.point});
+  const _ClubMapPoint({
+    required this.club,
+    required this.point,
+    required this.mapboxToken,
+  });
 
   final ClubSummary club;
   final _MapPoint point;
+  final String mapboxToken;
 }
 
 class MediaLibraryPage extends StatefulWidget {
