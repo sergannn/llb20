@@ -3487,6 +3487,7 @@ class _TournamentDetailsPageState extends State<TournamentDetailsPage> {
   late Tournament tournament = widget.tournament;
   final FlutterSecureStorage secureStorage = const FlutterSecureStorage();
   bool loading = true;
+  bool detailsLoaded = false;
   bool registrationLoading = false;
   bool llbSessionValid = false;
   String? llbUsername;
@@ -3512,7 +3513,10 @@ class _TournamentDetailsPageState extends State<TournamentDetailsPage> {
         widget.tournament,
       );
       if (mounted) {
-        setState(() => tournament = details);
+        setState(() {
+          tournament = details;
+          detailsLoaded = true;
+        });
       }
     } catch (exception) {
       if (mounted) {
@@ -3536,11 +3540,27 @@ class _TournamentDetailsPageState extends State<TournamentDetailsPage> {
       final appUserId = await secureStorage.read(
         key: _LeagueHomePageState._appUserIdKey,
       );
+      final llbUsername = await secureStorage.read(
+        key: _LeagueHomePageState._llbUsernameKey,
+      );
+      final llbPlayerId = await secureStorage.read(
+        key: _LeagueHomePageState._llbPlayerIdKey,
+      );
+      final llbCookies = await secureStorage.read(
+        key: _LeagueHomePageState._llbCookiesKey,
+      );
+      final fallbackUsername = llbCookies == null || llbCookies.isEmpty
+          ? null
+          : llbUsername;
+      final username = appUsername?.isNotEmpty == true
+          ? appUsername
+          : fallbackUsername;
+      final playerId = appUserId?.isNotEmpty == true ? appUserId : llbPlayerId;
       if (mounted) {
         setState(() {
-          llbUsername = appUsername;
-          llbPlayerId = appUserId;
-          llbSessionValid = appUsername != null && appUsername.isNotEmpty;
+          this.llbUsername = username;
+          this.llbPlayerId = playerId;
+          llbSessionValid = username != null && username.isNotEmpty;
           registrationState = savedState;
         });
       }
@@ -3923,21 +3943,40 @@ class _TournamentDetailsPageState extends State<TournamentDetailsPage> {
   }
 
   String? _effectiveRegistrationState() {
+    if (tournament.appCreated &&
+        detailsLoaded &&
+        registrationState == 'registered' &&
+        tournament.playersCount == 0 &&
+        !_currentUserListed()) {
+      return 'not_registered';
+    }
     if (registrationState == 'registered' ||
         registrationState == 'not_registered') {
       return registrationState;
     }
-    final id = llbPlayerId?.trim();
-    if (id == null || id.isEmpty) {
-      return null;
-    }
-    if (tournament.players.any((player) => player.id == id)) {
+    if (_currentUserListed()) {
       return 'registered';
     }
     if (tournament.players.isNotEmpty || tournament.playersCount == 0) {
       return 'not_registered';
     }
     return null;
+  }
+
+  bool _currentUserListed() {
+    final id = llbPlayerId?.trim();
+    final username = llbUsername?.trim().toLowerCase();
+    return tournament.players.any((player) {
+      if (id != null && id.isNotEmpty && player.id == id) {
+        return true;
+      }
+      if (username != null &&
+          username.isNotEmpty &&
+          player.name.trim().toLowerCase() == username) {
+        return true;
+      }
+      return false;
+    });
   }
 
   void openBracket(BuildContext context) {
