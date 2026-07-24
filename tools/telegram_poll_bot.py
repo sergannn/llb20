@@ -13,6 +13,7 @@ WEB_APP_BASE = "https://llb.panfilius.ru/flutter_app/"
 WEB_OPEN_BASE = "https://llb.panfilius.ru/open/tournament/"
 STATE_PATH = Path.home() / ".config" / "llb_bot" / "poll_state.json"
 CONVERSATION_PATH = Path.home() / ".config" / "llb_bot" / "conversations.json"
+PROFILE_PATH = Path.home() / ".config" / "llb_bot" / "profiles.json"
 
 
 def load_env_file() -> None:
@@ -64,6 +65,24 @@ def answer_callback_query(callback_query_id: str, text: str = "") -> None:
     request_json(api_url("answerCallbackQuery"), payload, timeout=15)
 
 
+def setup_bot_commands() -> None:
+    request_json(
+        api_url("setMyCommands"),
+        {
+            "commands": [
+                {"command": "start", "description": "Открыть меню"},
+                {"command": "tournaments", "description": "Ближайшие турниры"},
+                {"command": "profile", "description": "Имя и город для записи"},
+                {"command": "create", "description": "Создать турнир"},
+                {"command": "login", "description": "Привязать аккаунт приложения"},
+                {"command": "whoami", "description": "Проверить привязку"},
+                {"command": "cancel", "description": "Отменить ввод"},
+            ]
+        },
+        timeout=15,
+    )
+
+
 def app_tournament_url(tournament_id: int | str) -> str:
     return f"{WEB_OPEN_BASE}?id={tournament_id}"
 
@@ -80,10 +99,33 @@ def tournament_keyboard(tournament_id: int | str) -> dict:
             [
                 {
                     "text": "Записаться",
-                    "url": app_tournament_url(tournament_id),
+                    "callback_data": f"join:{tournament_id}",
                 }
             ],
         ]
+    }
+
+
+def main_menu_keyboard() -> dict:
+    return {
+        "keyboard": [
+            [{"text": "🏆 Турниры"}, {"text": "👤 Профиль"}],
+            [{"text": "➕ Создать турнир"}, {"text": "🔗 Привязать аккаунт"}],
+            [{"text": "ℹ️ Помощь"}],
+        ],
+        "resize_keyboard": True,
+        "is_persistent": True,
+    }
+
+
+def profile_keyboard() -> dict:
+    return {
+        "keyboard": [
+            [{"text": "✏️ Изменить профиль"}, {"text": "🔗 Привязать аккаунт"}],
+            [{"text": "🏆 Турниры"}, {"text": "ℹ️ Помощь"}],
+        ],
+        "resize_keyboard": True,
+        "is_persistent": True,
     }
 
 
@@ -108,6 +150,71 @@ def linked_user_label(user: dict | None) -> str:
     if display and username and display != username:
         return f"{display} ({username})"
     return display or username
+
+
+def fallback_display_name(sender: dict, user_id: int) -> str:
+    name = " ".join(
+        part for part in [sender.get("first_name"), sender.get("last_name")] if part
+    ).strip()
+    if name:
+        return name
+    username = str(sender.get("username") or "").strip()
+    if username:
+        return f"@{username}"
+    return f"Telegram user {user_id}"
+
+
+def load_profiles() -> dict:
+    try:
+        return json.loads(PROFILE_PATH.read_text())
+    except Exception:
+        return {}
+
+
+def save_profiles(data: dict) -> None:
+    PROFILE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    PROFILE_PATH.write_text(json.dumps(data, ensure_ascii=False))
+
+
+def profile_for(user_id: int) -> dict:
+    profiles = load_profiles()
+    profile = profiles.get(str(user_id))
+    return profile if isinstance(profile, dict) else {}
+
+
+def save_profile(user_id: int, profile: dict) -> None:
+    profiles = load_profiles()
+    profiles[str(user_id)] = profile
+    save_profiles(profiles)
+
+
+def profile_name(user_id: int, sender: dict) -> str:
+    profile = profile_for(user_id)
+    name = str(profile.get("display_name") or "").strip()
+    return name or fallback_display_name(sender, user_id)
+
+
+def profile_city(user_id: int) -> str:
+    return str(profile_for(user_id).get("city") or "").strip()
+
+
+def profile_text(user_id: int, sender: dict) -> str:
+    profile = profile_for(user_id)
+    name = str(profile.get("display_name") or "").strip() or "не указано"
+    city = str(profile.get("city") or "").strip() or "не указан"
+    user = linked_user(user_id)
+    linked = linked_user_label(user) if user else "не привязан"
+    return "\n".join(
+        [
+            "Профиль для турниров",
+            "",
+            f"Имя в заявке: {name}",
+            f"Город: {city}",
+            f"Аккаунт приложения: {linked}",
+            "",
+            "Это имя и город будут использоваться при записи через Telegram.",
+        ]
+    )
 
 
 def created_by_label(telegram_id: int) -> str:
@@ -147,8 +254,14 @@ def help_text() -> str:
         [
             "Лига бильярдистов",
             "",
+            "Кнопки меню:",
+            "🏆 Турниры - ближайшие турниры",
+            "👤 Профиль - имя и город для записи",
+            "🔗 Привязать аккаунт - связать Telegram с приложением",
+            "",
             "/tournaments - ближайшие турниры",
             "/create - создать турнир по шагам",
+            "/profile - профиль для заявок",
             "/login - привязать аккаунт приложения",
             "/whoami - проверить привязку",
         ]
@@ -228,26 +341,52 @@ def create_tournament(text: str, user_id: int) -> str:
     )
 
 
-def join_tournament(text: str, user_id: int, fallback_name: str) -> str:
-    payload = text.split(maxsplit=2)
-    if len(payload) < 2 or not payload[1].isdigit():
-        return "Запись делается из карточки турнира после входа в приложение."
-    name = payload[2].strip() if len(payload) > 2 else fallback_name
-    if not name:
-        name = f"Telegram user {user_id}"
+def join_tournament_by_id(
+    tournament_id: int,
+    user_id: int,
+    sender: dict,
+    explicit_name: str = "",
+) -> str:
+    name = explicit_name.strip() or profile_name(user_id, sender)
+    city = profile_city(user_id)
+    if not city:
+        start_profile_flow(user_id, sender, pending_join=tournament_id)
+        return (
+            "Сначала заполним профиль для записи.\n"
+            "Какое имя показывать в турнире?"
+        )
     data = request_json(
         API_BASE + "?resource=tournament_registration",
         {
-            "tournament_id": int(payload[1]),
+            "tournament_id": tournament_id,
             "action": "register",
             "username": f"telegram:{user_id}",
             "name": name,
+            "city": city,
         },
         timeout=25,
     )
     if not data.get("ok"):
-        return "Не удалось записаться. Возможно, этот турнир не создан в приложении."
-    return f"Запись сохранена: {name}"
+        error = str(data.get("error") or "")
+        if error == "not_app_created_tournament":
+            return (
+                "На этот турнир нельзя записаться через Telegram: он не создан в приложении. "
+                "Откройте карточку турнира и используйте запись LLB, если она доступна."
+            )
+        return "Не удалось записаться. Возможно, турнир уже закрыт или не найден."
+    return f"Запись сохранена: {name}\nГород: {city}"
+
+
+def join_tournament(text: str, user_id: int, sender: dict) -> str:
+    payload = text.split(maxsplit=2)
+    if len(payload) < 2 or not payload[1].isdigit():
+        return "Напишите так: /join 5500001 или нажмите «Записаться» в карточке турнира."
+    explicit_name = payload[2].strip() if len(payload) > 2 else ""
+    if explicit_name:
+        profile = profile_for(user_id)
+        profile["display_name"] = explicit_name
+        save_profile(user_id, profile)
+    return join_tournament_by_id(int(payload[1]), user_id, sender, explicit_name)
 
 
 def load_conversations() -> dict:
@@ -267,6 +406,84 @@ def start_create_flow(user_id: int) -> str:
     conversations[str(user_id)] = {"mode": "create", "step": "title", "data": {}}
     save_conversations(conversations)
     return "Создаем турнир. Напишите название турнира."
+
+
+def start_profile_flow(
+    user_id: int,
+    sender: dict,
+    pending_join: int | None = None,
+) -> str:
+    profile = profile_for(user_id)
+    default_name = str(profile.get("display_name") or "").strip() or fallback_display_name(
+        sender,
+        user_id,
+    )
+    conversations = load_conversations()
+    conversations[str(user_id)] = {
+        "mode": "profile",
+        "step": "display_name",
+        "data": {
+            "display_name": default_name,
+            "city": str(profile.get("city") or "").strip(),
+            "pending_join": pending_join,
+        },
+    }
+    save_conversations(conversations)
+    return (
+        "Какое имя показывать в турнирах?\n"
+        f"Можно написать новое или оставить так: {default_name}"
+    )
+
+
+def handle_profile_flow(user_id: int, sender: dict, text: str) -> str | None:
+    conversations = load_conversations()
+    state = conversations.get(str(user_id))
+    if not state or state.get("mode") != "profile":
+        return None
+    normalized = text.strip()
+    if normalized.lower() in {"/cancel", "отмена"}:
+        conversations.pop(str(user_id), None)
+        save_conversations(conversations)
+        return "Настройка профиля отменена."
+
+    data = state.setdefault("data", {})
+    step = state.get("step")
+    if step == "display_name":
+        if normalized:
+            data["display_name"] = normalized
+        state["step"] = "city"
+        save_conversations(conversations)
+        current_city = str(data.get("city") or "").strip()
+        suffix = f"\nСейчас: {current_city}" if current_city else ""
+        return "Ваш город для турниров? Например: Санкт-Петербург" + suffix
+
+    if step == "city":
+        if normalized:
+            data["city"] = normalized
+        name = str(data.get("display_name") or "").strip() or fallback_display_name(
+            sender,
+            user_id,
+        )
+        city = str(data.get("city") or "").strip()
+        save_profile(
+            user_id,
+            {
+                "display_name": name,
+                "city": city,
+                "telegram_username": sender.get("username") or "",
+                "updated_at": int(time.time()),
+            },
+        )
+        pending_join = data.get("pending_join")
+        conversations.pop(str(user_id), None)
+        save_conversations(conversations)
+        if pending_join:
+            return join_tournament_by_id(int(pending_join), user_id, sender)
+        return f"Профиль сохранен.\nИмя: {name}\nГород: {city}"
+
+    conversations.pop(str(user_id), None)
+    save_conversations(conversations)
+    return start_profile_flow(user_id, sender)
 
 
 def handle_create_flow(user_id: int, text: str) -> str | None:
@@ -353,14 +570,16 @@ def handle_update(update: dict) -> None:
         answer_callback_query(callback_id)
         message = callback.get("message") or {}
         chat = message.get("chat") or {}
+        sender = callback.get("from") or {}
         chat_id = int(chat.get("id") or 0)
         if chat_id and data.startswith("join:"):
             tournament_id = data.split(":", 1)[1]
-            send_message(
-                chat_id,
-                "Чтобы записаться, откройте турнир и войдите в аккаунт.",
-                reply_markup=tournament_keyboard(tournament_id),
-            )
+            user_id = int(sender.get("id") or 0)
+            if not tournament_id.isdigit() or user_id <= 0:
+                send_message(chat_id, "Не удалось определить турнир или пользователя.")
+                return
+            reply = join_tournament_by_id(int(tournament_id), user_id, sender)
+            send_message(chat_id, reply, reply_markup=main_menu_keyboard())
         return
 
     message = update.get("message") or {}
@@ -371,21 +590,55 @@ def handle_update(update: dict) -> None:
         return
     text = str(message.get("text") or "").strip()
     user_id = int(sender.get("id") or 0)
-    name = " ".join(
-        part for part in [sender.get("first_name"), sender.get("last_name")] if part
-    ).strip()
     command = text.split(maxsplit=1)[0].split("@", 1)[0].lower() if text else ""
     try:
-        flow_reply = None if command.startswith("/") else handle_create_flow(user_id, text)
+        menu_text = text.lower()
+        if menu_text == "🏆 турниры":
+            command = "/tournaments"
+        elif menu_text == "➕ создать турнир":
+            command = "/create"
+        elif menu_text == "🔗 привязать аккаунт":
+            command = "/login"
+        elif menu_text == "👤 профиль":
+            command = "/profile"
+        elif menu_text == "✏️ изменить профиль":
+            command = "/profile_edit"
+        elif menu_text == "ℹ️ помощь":
+            command = "/help"
+
+        if command == "/cancel":
+            conversations = load_conversations()
+            conversations.pop(str(user_id), None)
+            save_conversations(conversations)
+            send_message(chat_id, "Отменено.", reply_markup=main_menu_keyboard())
+            return
+
+        flow_reply = None
+        if not command.startswith("/"):
+            flow_reply = handle_profile_flow(user_id, sender, text)
+            if flow_reply is None:
+                flow_reply = handle_create_flow(user_id, text)
         if flow_reply is not None:
             reply = flow_reply
+        elif command in {"/start", "/menu", "/help"}:
+            user = linked_user(user_id)
+            label = linked_user_label(user)
+            reply = (f"Вы вошли как {label}\n\n" if label else "") + help_text()
+            send_message(chat_id, reply, reply_markup=main_menu_keyboard())
+            return
         elif command == "/tournaments":
             send_upcoming(chat_id)
             return
         elif command == "/create":
-            reply = create_tournament(text, user_id)
+            reply = create_tournament(text if text.startswith("/") else "/create", user_id)
         elif command == "/join":
-            reply = join_tournament(text, user_id, name)
+            reply = join_tournament(text, user_id, sender)
+        elif command == "/profile":
+            reply = profile_text(user_id, sender)
+            send_message(chat_id, reply, reply_markup=profile_keyboard())
+            return
+        elif command == "/profile_edit":
+            reply = start_profile_flow(user_id, sender)
         elif command == "/login":
             reply, keyboard = start_login_link(sender, chat_id)
             send_message(chat_id, reply, reply_markup=keyboard)
@@ -403,13 +656,17 @@ def handle_update(update: dict) -> None:
             reply = (f"Вы вошли как {label}\n\n" if label else "") + help_text()
     except Exception as exc:
         reply = f"Не получилось выполнить команду: {exc}"
-    send_message(chat_id, reply)
+    send_message(chat_id, reply, reply_markup=main_menu_keyboard())
 
 
 def main() -> None:
     load_env_file()
     if "TELEGRAM_BOT_TOKEN" not in os.environ:
         raise SystemExit("TELEGRAM_BOT_TOKEN is not set")
+    try:
+        setup_bot_commands()
+    except Exception as exc:
+        print(f"commands setup error: {exc}", flush=True)
     offset = load_offset()
     while True:
         params = {"timeout": 25, "allowed_updates": ["message", "callback_query"]}
