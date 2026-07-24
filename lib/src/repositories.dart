@@ -634,7 +634,8 @@ class ApiLeagueRepository implements LeagueRepository {
   Tournament _tournamentFromJson(Map<String, dynamic> json) {
     final id = '${json['id']}';
     final title = _text(json['title'], 'Турнир');
-    final status = _statusFromTournamentJson(json);
+    final dateLabel = _text(json['date_text']);
+    final status = _statusFromTournamentJson(json, dateLabel: dateLabel);
     final compId = _intValue(json['comp_id']);
     final bracketUrl = _text(
       json['bracket_url'],
@@ -655,7 +656,7 @@ class ApiLeagueRepository implements LeagueRepository {
       club: _text(json['club']),
       discipline: _text(json['discipline'], _disciplineFromTitle(title)),
       level: _tournamentSectionLabel(status),
-      dateLabel: _text(json['date_text']),
+      dateLabel: dateLabel,
       playersCount: _intValue(json['participants_count']) ?? 0,
       capacity: _intValue(json['participants_limit']),
       matchesCount: status == TournamentStatus.upcoming
@@ -984,10 +985,26 @@ class ApiLeagueRepository implements LeagueRepository {
     return 'Бильярд';
   }
 
-  TournamentStatus _statusFromTournamentJson(Map<String, dynamic> json) {
+  TournamentStatus _statusFromTournamentJson(
+    Map<String, dynamic> json, {
+    required String dateLabel,
+  }) {
+    if (dateLabel.toLowerCase().contains('отмен')) {
+      return TournamentStatus.finished;
+    }
     final sourceKind = '${json['source_kind'] ?? ''}'.toLowerCase();
     final statusClass = '${json['status_class'] ?? ''}'.toLowerCase();
     if (sourceKind == 'next' || statusClass == 'future') {
+      final date = _dateFromLabel(dateLabel);
+      final now = DateTime.now();
+      if (date != null &&
+          DateTime(
+            date.year,
+            date.month,
+            date.day,
+          ).isBefore(DateTime(now.year, now.month, now.day))) {
+        return TournamentStatus.finished;
+      }
       return TournamentStatus.upcoming;
     }
     if (sourceKind == 'online' ||
@@ -996,6 +1013,21 @@ class ApiLeagueRepository implements LeagueRepository {
       return TournamentStatus.live;
     }
     return TournamentStatus.finished;
+  }
+
+  DateTime? _dateFromLabel(String dateLabel) {
+    final match = RegExp(r'(\d{2})\.(\d{2})\.(\d{2,4})').firstMatch(dateLabel);
+    if (match == null) {
+      return null;
+    }
+    final day = int.tryParse(match.group(1) ?? '');
+    final month = int.tryParse(match.group(2) ?? '');
+    final rawYear = int.tryParse(match.group(3) ?? '');
+    if (day == null || month == null || rawYear == null) {
+      return null;
+    }
+    final year = rawYear < 100 ? 2000 + rawYear : rawYear;
+    return DateTime(year, month, day);
   }
 
   String _tournamentSectionLabel(TournamentStatus status) {

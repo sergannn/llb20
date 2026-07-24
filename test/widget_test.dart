@@ -4,6 +4,14 @@ import 'package:llb_mobile/src/app.dart';
 import 'package:llb_mobile/src/repositories.dart';
 
 void main() {
+  Future<void> tapCardByKey(WidgetTester tester, String key) async {
+    final card = find.byKey(ValueKey(key));
+    await tester.ensureVisible(card);
+    await tester.pumpAndSettle();
+    final topLeft = tester.getTopLeft(card);
+    await tester.tapAt(topLeft + const Offset(24, 24));
+  }
+
   testWidgets('shows league home with tournament data', (tester) async {
     await tester.pumpWidget(const LlbApp(repository: MockLeagueRepository()));
     await tester.pumpAndSettle();
@@ -37,7 +45,13 @@ void main() {
     expect(find.text('РБ'), findsWidgets);
     expect(find.text('Пул'), findsWidgets);
 
-    await tester.tap(find.text('Сергеев Павел'));
+    await tapCardByKey(tester, 'player-tile-p1');
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('ЭЛО по дисциплинам'),
+      220,
+      scrollable: find.byType(Scrollable).last,
+    );
     await tester.pumpAndSettle();
 
     expect(find.text('ЭЛО по дисциплинам'), findsOneWidget);
@@ -90,7 +104,7 @@ void main() {
 
     await tester.tap(find.text('Игроки'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Сергеев Павел'));
+    await tapCardByKey(tester, 'player-tile-p1');
     await tester.pumpAndSettle();
 
     await tester.drag(find.byType(Scrollable), const Offset(0, -900));
@@ -127,10 +141,15 @@ void main() {
 
     await tester.tap(find.text('Итоги'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Санкт-Петербург 2026. Ольгино. Пирамида N 28'));
+    await tapCardByKey(tester, 'tournament-card-done-1');
     await tester.pumpAndSettle();
 
     expect(find.text('Участники'), findsWidgets);
+    await tester.scrollUntilVisible(
+      find.text('Сергеев Павел'),
+      220,
+      scrollable: find.byType(Scrollable).last,
+    );
     expect(find.text('Сергеев Павел'), findsWidgets);
 
     await tester.drag(find.byType(Scrollable), const Offset(0, -300));

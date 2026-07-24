@@ -5,10 +5,10 @@ import 'package:flutter/material.dart';
 class LlbAppTheme {
   const LlbAppTheme._();
 
-  static const baize = Color(0xff0f5b46);
+  static const baize = Color(0xff1c694d);
   static const wine = Color(0xff8f243b);
-  static const felt = Color(0xfff3f5ee);
-  static const border = Color(0xffdce2d6);
+  static const felt = Color(0xfff8f5ec);
+  static const border = Color(0xffc1d0c7);
 
   static Widget mediaQueryBuilder(BuildContext context, Widget? child) {
     final media = MediaQuery.of(context);
@@ -30,13 +30,13 @@ class LlbAppTheme {
             primary: baize,
             secondary: wine,
             tertiary: const Color(0xffc79a2f),
-            surface: const Color(0xfffffff9),
-            surfaceContainerHighest: const Color(0xffe7ece3),
-            outline: const Color(0xff76847a),
+            surface: Colors.white,
+            surfaceContainerHighest: const Color(0xffe3ece7),
+            outline: const Color(0xff839188),
           ),
       scaffoldBackgroundColor: felt,
       cardTheme: CardThemeData(
-        color: const Color(0xfffffff9),
+        color: Colors.white,
         elevation: 0,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(8),
@@ -45,12 +45,13 @@ class LlbAppTheme {
       ),
       appBarTheme: const AppBarTheme(
         centerTitle: true,
-        backgroundColor: baize,
-        foregroundColor: Colors.white,
+        backgroundColor: felt,
+        foregroundColor: Color(0xff1f2a24),
         scrolledUnderElevation: 0,
+        elevation: 0,
         titleTextStyle: TextStyle(
-          color: Colors.white,
-          fontSize: 24,
+          color: Color(0xff1f2a24),
+          fontSize: 20,
           fontWeight: FontWeight.w500,
         ),
       ),
@@ -69,7 +70,7 @@ class LlbAppTheme {
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: const Color(0xfffffff9),
+        fillColor: Colors.white,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
           borderSide: const BorderSide(color: border),

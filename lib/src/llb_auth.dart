@@ -39,6 +39,8 @@ class AppAuthResult {
     required this.displayName,
     required this.city,
     required this.token,
+    this.telegramId = '',
+    this.telegramUsername = '',
   });
 
   final String id;
@@ -46,6 +48,8 @@ class AppAuthResult {
   final String displayName;
   final String city;
   final String token;
+  final String telegramId;
+  final String telegramUsername;
 }
 
 class AppAuthClient {
@@ -98,6 +102,41 @@ class AppAuthClient {
       displayName: '${user['display_name'] ?? displayName}',
       city: '${user['city'] ?? city}',
       token: '${user['token'] ?? ''}',
+      telegramId: '${user['telegram_id'] ?? ''}',
+      telegramUsername: '${user['telegram_username'] ?? ''}',
+    );
+  }
+
+  Future<AppAuthResult> claimTelegramLink({
+    required String code,
+    required String token,
+  }) async {
+    final uri = Uri.parse(
+      apiBaseUrl,
+    ).replace(queryParameters: {'resource': 'telegram_link_claim'});
+    final response = await _client
+        .post(
+          uri,
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+          body: jsonEncode({'code': code, 'token': token}),
+        )
+        .timeout(_requestTimeout);
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw StateError('${data['error'] ?? 'telegram_link_failed'}');
+    }
+    final user = (data['user'] as Map<String, dynamic>?) ?? const {};
+    return AppAuthResult(
+      id: '${user['id'] ?? ''}',
+      username: '${user['username'] ?? ''}',
+      displayName: '${user['display_name'] ?? user['username'] ?? ''}',
+      city: '${user['city'] ?? ''}',
+      token: token,
+      telegramId: '${user['telegram_id'] ?? ''}',
+      telegramUsername: '${user['telegram_username'] ?? ''}',
     );
   }
 
