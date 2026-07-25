@@ -366,173 +366,204 @@ class _SettingsDrawer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    const drawerTextColor = Colors.white;
     return Drawer(
+      backgroundColor: LlbAppTheme.baize,
       child: SafeArea(
-        child: Column(
-          children: [
-            Expanded(
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-                children: [
-                  Text(
-                    'Меню',
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.w900,
+        child: ListTileTheme(
+          iconColor: drawerTextColor,
+          textColor: drawerTextColor,
+          child: Column(
+            children: [
+              Expanded(
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                  children: [
+                    Text(
+                      'Меню',
+                      style: Theme.of(context).textTheme.headlineSmall
+                          ?.copyWith(
+                            color: drawerTextColor,
+                            fontWeight: FontWeight.w900,
+                          ),
                     ),
-                  ),
-                  const SizedBox(height: 18),
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Icon(
-                                llbSessionValid
-                                    ? Icons.verified_user_outlined
-                                    : Icons.login,
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  'Аккаунт LLB',
-                                  style: Theme.of(context).textTheme.titleMedium
-                                      ?.copyWith(fontWeight: FontWeight.w800),
+                    const SizedBox(height: 18),
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(
+                                  llbSessionValid
+                                      ? Icons.verified_user_outlined
+                                      : Icons.login,
                                 ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    'Аккаунт LLB',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleMedium
+                                        ?.copyWith(fontWeight: FontWeight.w800),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              llbUsername == null
+                                  ? 'Войдите, чтобы связать приложение с LLB.'
+                                  : llbSessionValid
+                                  ? 'Вход выполнен: $llbUsername'
+                                  : 'Сессия сохранена, но требует повторного входа.',
+                            ),
+                            if (llbUsername == null || !llbSessionValid) ...[
+                              const SizedBox(height: 10),
+                              FilledButton.icon(
+                                onPressed: () {
+                                  Navigator.of(context).pop();
+                                  onLlbLogin();
+                                },
+                                icon: const Icon(Icons.login),
+                                label: const Text('Авторизоваться'),
                               ),
                             ],
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            llbUsername == null
-                                ? 'Войдите, чтобы связать приложение с LLB.'
-                                : llbSessionValid
-                                ? 'Вход выполнен: $llbUsername'
-                                : 'Сессия сохранена, но требует повторного входа.',
-                          ),
-                          if (llbUsername == null || !llbSessionValid) ...[
-                            const SizedBox(height: 10),
-                            FilledButton.icon(
-                              onPressed: () {
-                                Navigator.of(context).pop();
-                                onLlbLogin();
-                              },
-                              icon: const Icon(Icons.login),
-                              label: const Text('Авторизоваться'),
-                            ),
                           ],
-                        ],
+                        ),
                       ),
                     ),
-                  ),
-                  if (llbUsername != null) ...[
-                    const SizedBox(height: 10),
-                    _DrawerProfileSection(
-                      repository: repository,
-                      username: llbUsername!,
-                      playerId: llbPlayerId,
+                    if (llbUsername != null) ...[
+                      const SizedBox(height: 10),
+                      ListTileTheme(
+                        iconColor: Theme.of(context).colorScheme.onSurface,
+                        textColor: Theme.of(context).colorScheme.onSurface,
+                        child: _DrawerProfileSection(
+                          repository: repository,
+                          username: llbUsername!,
+                          playerId: llbPlayerId,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 18),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.store_mall_directory_outlined),
+                      title: const Text('Клубы'),
+                      subtitle: Text(
+                        '${clubs.length} клубов',
+                        style: const TextStyle(color: Colors.white70),
+                      ),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => ClubsPage(
+                              clubs: clubs,
+                              initialCity: selectedCity,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.perm_media_outlined),
+                      title: const Text('Медиа'),
+                      subtitle: const Text(
+                        'Фото и видео турниров',
+                        style: TextStyle(color: Colors.white70),
+                      ),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) =>
+                                MediaLibraryPage(repository: repository),
+                          ),
+                        );
+                      },
+                    ),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.article_outlined),
+                      title: const Text('Новости'),
+                      subtitle: const Text(
+                        'Раздел в разработке',
+                        style: TextStyle(color: Colors.white70),
+                      ),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(builder: (_) => const NewsPage()),
+                        );
+                      },
+                    ),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.sports_cricket_outlined),
+                      title: const Text('Кии'),
+                      subtitle: const Text(
+                        'Раздел в разработке',
+                        style: TextStyle(color: Colors.white70),
+                      ),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(builder: (_) => const CuesPage()),
+                        );
+                      },
+                    ),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.settings_outlined),
+                      title: const Text('Настройки'),
+                      subtitle: Text(
+                        '$selectedCity · ${selectedDiscipline.label}',
+                        style: const TextStyle(color: Colors.white70),
+                      ),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => _DefaultSettingsPage(
+                              selectedCity: selectedCity,
+                              selectedDiscipline: selectedDiscipline,
+                              citySuggestions: citySuggestions,
+                              onCitySelected: onCitySelected,
+                              onDisciplineSelected: onDisciplineSelected,
+                            ),
+                          ),
+                        );
+                      },
                     ),
                   ],
-                  const SizedBox(height: 18),
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.store_mall_directory_outlined),
-                    title: const Text('Клубы'),
-                    subtitle: Text('${clubs.length} клубов'),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => ClubsPage(
-                            clubs: clubs,
-                            initialCity: selectedCity,
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.perm_media_outlined),
-                    title: const Text('Медиа'),
-                    subtitle: const Text('Фото и видео турниров'),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) =>
-                              MediaLibraryPage(repository: repository),
-                        ),
-                      );
-                    },
-                  ),
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.article_outlined),
-                    title: const Text('Новости'),
-                    subtitle: const Text('Раздел в разработке'),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(builder: (_) => const NewsPage()),
-                      );
-                    },
-                  ),
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.sports_cricket_outlined),
-                    title: const Text('Кии'),
-                    subtitle: const Text('Раздел в разработке'),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(builder: (_) => const CuesPage()),
-                      );
-                    },
-                  ),
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.settings_outlined),
-                    title: const Text('Настройки'),
-                    subtitle: Text(
-                      '$selectedCity · ${selectedDiscipline.label}',
-                    ),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => _DefaultSettingsPage(
-                            selectedCity: selectedCity,
-                            selectedDiscipline: selectedDiscipline,
-                            citySuggestions: citySuggestions,
-                            onCitySelected: onCitySelected,
-                            onDisciplineSelected: onDisciplineSelected,
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ],
-              ),
-            ),
-            if (llbUsername != null)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                child: SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    onPressed: () {
-                      Navigator.of(context).pop();
-                      onLlbLogout();
-                    },
-                    icon: const Icon(Icons.logout),
-                    label: const Text('Выйти'),
-                  ),
                 ),
               ),
-          ],
+              if (llbUsername != null)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        Navigator.of(context).pop();
+                        onLlbLogout();
+                      },
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: drawerTextColor,
+                        side: const BorderSide(color: Colors.white70),
+                      ),
+                      icon: const Icon(Icons.logout),
+                      label: const Text('Выйти'),
+                    ),
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );

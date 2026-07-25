@@ -76,8 +76,7 @@ class _TournamentsPageState extends State<_TournamentsPage> {
       initialIndex: initialTabIndex,
       child: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+          _AnimaHeaderBand(
             child: Column(
               children: [
                 _AnimaSearchField(
@@ -108,22 +107,24 @@ class _TournamentsPageState extends State<_TournamentsPage> {
                       ),
                   ],
                 ),
-                const SizedBox(height: 14),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _TournamentTabBar(
-                        tabs: _tabs,
-                        tournaments: visibleTournaments,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    IconButton.filled(
-                      tooltip: 'Создать турнир',
-                      onPressed: showCreateTournamentSheet,
-                      icon: const Icon(Icons.add),
-                    ),
-                  ],
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+            child: Row(
+              children: [
+                Expanded(
+                  child: _TournamentTabBar(
+                    tabs: _tabs,
+                    tournaments: visibleTournaments,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                IconButton.filled(
+                  tooltip: 'Создать турнир',
+                  onPressed: showCreateTournamentSheet,
+                  icon: const Icon(Icons.add),
                 ),
               ],
             ),
@@ -599,6 +600,35 @@ class _SuggestionChips extends StatelessWidget {
                     : () => onSelected!(option),
               ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AnimaHeaderBand extends StatelessWidget {
+  const _AnimaHeaderBand({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final labelLarge = theme.textTheme.labelLarge;
+    return DecoratedBox(
+      decoration: const BoxDecoration(color: LlbAppTheme.baize),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 18),
+        child: Theme(
+          data: theme.copyWith(
+            textTheme: theme.textTheme.copyWith(
+              labelLarge: labelLarge?.copyWith(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          child: child,
         ),
       ),
     );

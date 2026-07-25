@@ -45,12 +45,14 @@ class LlbAppTheme {
       ),
       appBarTheme: const AppBarTheme(
         centerTitle: true,
-        backgroundColor: felt,
-        foregroundColor: Color(0xff1f2a24),
+        backgroundColor: baize,
+        foregroundColor: Colors.white,
         scrolledUnderElevation: 0,
         elevation: 0,
+        iconTheme: IconThemeData(color: Colors.white),
+        actionsIconTheme: IconThemeData(color: Colors.white),
         titleTextStyle: TextStyle(
-          color: Color(0xff1f2a24),
+          color: Colors.white,
           fontSize: 20,
           fontWeight: FontWeight.w500,
         ),

@@ -141,61 +141,74 @@ class _PlayersPageState extends State<_PlayersPage> {
       onRefresh: widget.onRefresh,
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
+        padding: const EdgeInsets.only(bottom: 24),
         children: [
-          _AnimaSearchField(
-            controller: widget.searchController,
-            label: 'Поиск игроков',
-            hintText: widget.searchHint,
-            value: widget.search,
-            onChanged: widget.onSearchChanged,
-          ),
-          const SizedBox(height: 12),
-          _FilterChipsRow(
-            chips: [
-              _FilterChipData(
-                icon: Icons.place_outlined,
-                label: widget.selectedCity,
-                onPressed: widget.onCityTap,
-              ),
-              _FilterChipData(
-                icon: Icons.sports_outlined,
-                label: widget.selectedDiscipline.label,
-                onPressed: widget.onDisciplineTap,
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          if (searching) const LinearProgressIndicator(minHeight: 2),
-          if (searchError != null)
-            MaterialBanner(
-              leading: const Icon(Icons.cloud_off_outlined),
-              content: const Text('Не удалось выполнить поиск игроков.'),
-              actions: [
-                TextButton(
-                  onPressed: () => runSearch(widget.search.trim()),
-                  child: const Text('Еще раз'),
+          _AnimaHeaderBand(
+            child: Column(
+              children: [
+                _AnimaSearchField(
+                  controller: widget.searchController,
+                  label: 'Поиск игроков',
+                  hintText: widget.searchHint,
+                  value: widget.search,
+                  onChanged: widget.onSearchChanged,
+                ),
+                const SizedBox(height: 12),
+                _FilterChipsRow(
+                  chips: [
+                    _FilterChipData(
+                      icon: Icons.place_outlined,
+                      label: widget.selectedCity,
+                      onPressed: widget.onCityTap,
+                    ),
+                    _FilterChipData(
+                      icon: Icons.sports_outlined,
+                      label: widget.selectedDiscipline.label,
+                      onPressed: widget.onDisciplineTap,
+                    ),
+                  ],
                 ),
               ],
             ),
-          _PlayersTableHeader(
-            sort: widget.sort,
-            sortAscending: widget.sortAscending,
-            onSortChanged: widget.onSortChanged,
           ),
-          const SizedBox(height: 12),
-          for (final player in players)
-            _PlayerTile(
-              repository: widget.repository,
-              player: player,
-              showMeta: true,
+          const SizedBox(height: 14),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Column(
+              children: [
+                if (searching) const LinearProgressIndicator(minHeight: 2),
+                if (searchError != null)
+                  MaterialBanner(
+                    leading: const Icon(Icons.cloud_off_outlined),
+                    content: const Text('Не удалось выполнить поиск игроков.'),
+                    actions: [
+                      TextButton(
+                        onPressed: () => runSearch(widget.search.trim()),
+                        child: const Text('Еще раз'),
+                      ),
+                    ],
+                  ),
+                _PlayersTableHeader(
+                  sort: widget.sort,
+                  sortAscending: widget.sortAscending,
+                  onSortChanged: widget.onSortChanged,
+                ),
+                const SizedBox(height: 12),
+                for (final player in players)
+                  _PlayerTile(
+                    repository: widget.repository,
+                    player: player,
+                    showMeta: true,
+                  ),
+                if (players.isEmpty)
+                  const _EmptyState(
+                    icon: Icons.person_search,
+                    title: 'Игрок не найден',
+                    text: 'Поиск на этом экране идет только по имени игрока.',
+                  ),
+              ],
             ),
-          if (players.isEmpty)
-            const _EmptyState(
-              icon: Icons.person_search,
-              title: 'Игрок не найден',
-              text: 'Поиск на этом экране идет только по имени игрока.',
-            ),
+          ),
         ],
       ),
     );
