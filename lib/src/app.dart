@@ -331,10 +331,13 @@ class _LeagueHomePageState extends State<LeagueHomePage> {
     client.loadEncodedCookies(savedCookies);
     try {
       final valid = await client.sessionValid();
-      if (valid && (savedPlayerId == null || savedPlayerId.isEmpty)) {
-        savedPlayerId = await client.currentPlayerId(username: savedUsername);
-        if (savedPlayerId != null && savedPlayerId.isNotEmpty) {
-          await secureStorage.write(key: _llbPlayerIdKey, value: savedPlayerId);
+      if (valid) {
+        final freshPlayerId = await client.currentPlayerId(
+          username: savedUsername,
+        );
+        if (freshPlayerId != null && freshPlayerId.isNotEmpty) {
+          savedPlayerId = freshPlayerId;
+          await secureStorage.write(key: _llbPlayerIdKey, value: freshPlayerId);
         }
       }
       if (!mounted) {

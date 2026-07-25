@@ -231,7 +231,18 @@ class LlbWebAuthClient {
   }
 
   Future<String?> currentPlayerId({String? username}) async {
-    final pages = [await _send('GET', '/'), await _send('GET', '/user')];
+    final usernamePath = username == null || username.trim().isEmpty
+        ? null
+        : '/users/${Uri.encodeComponent(username.trim())}';
+    final paths = <String>[
+      if (usernamePath != null) usernamePath,
+      '/user',
+      '/',
+    ];
+    final pages = <http.Response>[];
+    for (final path in paths) {
+      pages.add(await _send('GET', path));
+    }
     for (final response in pages) {
       final id = _extractPlayerId(response.body, username: username);
       if (id != null) {
@@ -400,6 +411,26 @@ class LlbWebAuthClient {
   }
 
   String? _extractPlayerId(String html, {String? username}) {
+    final profilePatterns = <RegExp>[
+      RegExp(
+        r"""class=["'][^"']*nodeprofile[^"']*["'][\s\S]{0,800}?href=["']/node/(\d+)["']""",
+        caseSensitive: false,
+      ),
+      RegExp(
+        r"""nodeprofile-display[\s\S]{0,800}?href=["']/node/(\d+)["']""",
+        caseSensitive: false,
+      ),
+      RegExp(r"""id=["']imagefield-nodelink-(\d+)["']""", caseSensitive: false),
+      RegExp(r"""ЛЛБ\s*ID:\s*(\d+)""", caseSensitive: false),
+    ];
+    for (final pattern in profilePatterns) {
+      final match = pattern.firstMatch(html);
+      final id = match?.group(1);
+      if (id != null && id.isNotEmpty) {
+        return id;
+      }
+    }
+
     final patterns = <RegExp>[
       RegExp(r"""href=["']/(?:node|user)/(\d+)["']"""),
       RegExp(r"""href=["']https?://www\.llb\.su/(?:node|user)/(\d+)["']"""),

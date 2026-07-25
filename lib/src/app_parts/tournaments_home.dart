@@ -738,20 +738,18 @@ class _AnimaFilterChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return OutlinedButton.icon(
+    return OutlinedButton(
       onPressed: chip.onPressed,
-      icon: Icon(chip.icon, size: 18),
-      label: Text(chip.label, maxLines: 1, overflow: TextOverflow.ellipsis),
       style: OutlinedButton.styleFrom(
         minimumSize: const Size(0, 44),
-        maximumSize: const Size(240, 44),
-        padding: const EdgeInsets.symmetric(horizontal: 14),
+        padding: const EdgeInsets.symmetric(horizontal: 16),
         foregroundColor: Theme.of(context).colorScheme.onSurface,
         backgroundColor: Theme.of(context).colorScheme.surface,
         side: const BorderSide(color: LlbAppTheme.border),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        shape: const StadiumBorder(),
         textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
       ),
+      child: Text(chip.label, maxLines: 1, overflow: TextOverflow.fade),
     );
   }
 }
