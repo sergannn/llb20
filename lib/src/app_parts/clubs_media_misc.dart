@@ -1067,6 +1067,7 @@ class _LiveClubMap extends StatefulWidget {
 class _LiveClubMapState extends State<_LiveClubMap> {
   final MapController mapController = MapController();
   _PoiMapPoint? selectedPoi;
+  _ClubMapPoint? selectedClubPoint;
 
   String _clubKey(ClubSummary club) =>
       '${club.city.toLowerCase()}::${club.name.toLowerCase()}';
@@ -1083,6 +1084,15 @@ class _LiveClubMapState extends State<_LiveClubMap> {
       );
       if (!stillExists) {
         selectedPoi = null;
+      }
+    }
+    if (oldWidget.data != widget.data && selectedClubPoint != null) {
+      final key = _clubKey(selectedClubPoint!.club);
+      final stillExists = widget.data.clubPoints.any(
+        (item) => _clubKey(item.club) == key,
+      );
+      if (!stillExists) {
+        selectedClubPoint = null;
       }
     }
     final oldKey = oldWidget.selectedClub == null
@@ -1150,6 +1160,9 @@ class _LiveClubMapState extends State<_LiveClubMap> {
     final selectedKey = widget.selectedClub == null
         ? null
         : _clubKey(widget.selectedClub!);
+    final selectedClubInfoKey = selectedClubPoint == null
+        ? null
+        : _clubKey(selectedClubPoint!.club);
     final selectedPoi = this.selectedPoi;
     final markers = <Marker>[
       for (final poi in widget.data.poiPoints)
@@ -1189,12 +1202,22 @@ class _LiveClubMapState extends State<_LiveClubMap> {
       for (final item in widget.data.clubPoints)
         Marker(
           point: LatLng(item.point.latitude, item.point.longitude),
-          width: _clubKey(item.club) == selectedKey ? 40 : 34,
-          height: _clubKey(item.club) == selectedKey ? 40 : 34,
+          width:
+              _clubKey(item.club) == selectedKey ||
+                  _clubKey(item.club) == selectedClubInfoKey
+              ? 40
+              : 34,
+          height:
+              _clubKey(item.club) == selectedKey ||
+                  _clubKey(item.club) == selectedClubInfoKey
+              ? 40
+              : 34,
           child: GestureDetector(
             onTap: () {
-              setState(() => this.selectedPoi = null);
-              widget.onClubSelected(item.club);
+              setState(() {
+                this.selectedPoi = null;
+                selectedClubPoint = item;
+              });
             },
             child: Tooltip(
               message: item.club.name,
@@ -1211,7 +1234,11 @@ class _LiveClubMapState extends State<_LiveClubMap> {
                 ),
                 child: Icon(
                   Icons.storefront,
-                  size: _clubKey(item.club) == selectedKey ? 22 : 18,
+                  size:
+                      _clubKey(item.club) == selectedKey ||
+                          _clubKey(item.club) == selectedClubInfoKey
+                      ? 22
+                      : 18,
                   color: Colors.white,
                 ),
               ),
@@ -1241,6 +1268,7 @@ class _LiveClubMapState extends State<_LiveClubMap> {
   @override
   Widget build(BuildContext context) {
     final selectedPoiValue = selectedPoi;
+    final selectedClubValue = selectedClubPoint;
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -1249,7 +1277,10 @@ class _LiveClubMapState extends State<_LiveClubMap> {
           options: MapOptions(
             initialCenter: _initialCenter(),
             initialZoom: _initialZoom(),
-            onTap: (_, _) => setState(() => selectedPoi = null),
+            onTap: (_, _) => setState(() {
+              selectedPoi = null;
+              selectedClubPoint = null;
+            }),
           ),
           children: [
             _tileLayer(),
@@ -1260,19 +1291,128 @@ class _LiveClubMapState extends State<_LiveClubMap> {
           left: 12,
           right: 12,
           bottom: 12,
-          child: selectedPoiValue == null
-              ? _MapSummaryCard(data: widget.data)
-              : _MapFeatureBottomCard(
+          child: selectedPoiValue != null
+              ? _MapFeatureBottomCard(
                   poi: selectedPoiValue,
                   linkedClub: _linkedClub(selectedPoiValue),
-                  onClose: () => setState(() => selectedPoi = null),
+                  onClose: () => setState(() {
+                    selectedPoi = null;
+                    selectedClubPoint = null;
+                  }),
                   onOpenClub: (club) {
-                    setState(() => selectedPoi = null);
+                    setState(() {
+                      selectedPoi = null;
+                      selectedClubPoint = null;
+                    });
                     widget.onClubSelected(club);
                   },
-                ),
+                )
+              : selectedClubValue != null
+              ? _MapClubBottomCard(
+                  item: selectedClubValue,
+                  onClose: () => setState(() => selectedClubPoint = null),
+                  onOpenClub: (club) {
+                    setState(() => selectedClubPoint = null);
+                    widget.onClubSelected(club);
+                  },
+                )
+              : _MapSummaryCard(data: widget.data),
         ),
       ],
+    );
+  }
+}
+
+class _MapClubBottomCard extends StatelessWidget {
+  const _MapClubBottomCard({
+    required this.item,
+    required this.onClose,
+    required this.onOpenClub,
+  });
+
+  final _ClubMapPoint item;
+  final VoidCallback onClose;
+  final ValueChanged<ClubSummary> onOpenClub;
+
+  @override
+  Widget build(BuildContext context) {
+    final club = item.club;
+    final scheme = Theme.of(context).colorScheme;
+    final details = [
+      club.city,
+      if (club.address.isNotEmpty) club.address,
+      'турниров: ${club.tournamentsCount}',
+    ].where((value) => value.trim().isNotEmpty).join(' · ');
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: scheme.surface.withValues(alpha: 0.95),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(10, 10, 6, 10),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            DecoratedBox(
+              decoration: BoxDecoration(
+                color: scheme.primary,
+                shape: BoxShape.circle,
+              ),
+              child: const SizedBox(
+                width: 34,
+                height: 34,
+                child: Icon(Icons.storefront, color: Colors.white, size: 20),
+              ),
+            ),
+            const SizedBox(width: 9),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    club.name,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    details,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  TextButton.icon(
+                    style: TextButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      padding: EdgeInsets.zero,
+                      foregroundColor: scheme.primary,
+                    ),
+                    onPressed: () => onOpenClub(club),
+                    icon: const Icon(Icons.storefront, size: 18),
+                    label: const Text('Открыть клуб'),
+                  ),
+                ],
+              ),
+            ),
+            IconButton(
+              tooltip: 'Закрыть',
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints.tightFor(width: 28, height: 28),
+              onPressed: onClose,
+              icon: const Icon(Icons.close, size: 18),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
