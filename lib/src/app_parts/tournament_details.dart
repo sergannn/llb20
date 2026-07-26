@@ -88,7 +88,9 @@ class _TournamentMetaGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final items = [
-      (icon: Icons.calendar_today_outlined, label: tournament.dateLabel),
+      (icon: Icons.calendar_today_outlined, label: tournament.startDateText),
+      if (tournament.startTimeText.isNotEmpty)
+        (icon: Icons.schedule_outlined, label: tournament.startTimeText),
       (icon: Icons.place_outlined, label: tournament.city),
       (icon: Icons.pool_outlined, label: tournament.discipline),
       (icon: Icons.store_outlined, label: tournament.club),
@@ -575,10 +577,10 @@ class _TournamentDetailsPageState extends State<TournamentDetailsPage> {
             ),
             const SizedBox(height: 8),
             for (final player in tournament.players)
-              _PlayerTile(
+              _TournamentParticipantTile(
                 repository: widget.repository,
                 player: player,
-                showMeta: true,
+                tournamentCity: tournament.city,
               ),
             if (!loading && tournament.players.isEmpty)
               _EmptyState(
@@ -665,6 +667,152 @@ class _TournamentDetailsPageState extends State<TournamentDetailsPage> {
         builder: (_) => _BracketWebViewPage(
           title: tournament.title,
           url: tournament.bracketUrl,
+        ),
+      ),
+    );
+  }
+}
+
+class _TournamentParticipantTile extends StatelessWidget {
+  const _TournamentParticipantTile({
+    required this.repository,
+    required this.player,
+    required this.tournamentCity,
+  });
+
+  final LeagueRepository repository;
+  final Player player;
+  final String tournamentCity;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final sameCity =
+        tournamentCity.trim().isNotEmpty &&
+        tournamentCity.trim().toLowerCase() == player.city.trim().toLowerCase();
+    final metaParts = [
+      if (player.city.isNotEmpty && !sameCity) player.city,
+      if (player.club.isNotEmpty) player.club,
+      if (player.participantSummary.isNotEmpty) player.participantSummary,
+    ];
+    final metrics = <({String label, int? value})>[
+      (label: 'ЭЛО РБ', value: player.russianBilliardsElo),
+      (label: 'ЭЛО Пул', value: player.poolElo),
+      (
+        label: 'Турниры',
+        value: player.tournamentsCount > 0 ? player.tournamentsCount : null,
+      ),
+    ].where((item) => item.value != null && item.value! > 0).toList();
+
+    return Card(
+      key: ValueKey(
+        'tournament-participant-${player.id.isNotEmpty ? player.id : (player.membershipNodeId.isNotEmpty ? player.membershipNodeId : player.name)}',
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: player.hasRealLlbId
+            ? () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => PlayerDetailsPage(
+                      repository: repository,
+                      player: player,
+                    ),
+                  ),
+                );
+              }
+            : null,
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _PlayerThumbnail(player: player),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          player.name,
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(
+                                fontWeight: FontWeight.w700,
+                                height: 1.1,
+                              ),
+                        ),
+                        if (metaParts.isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            metaParts.join(' · '),
+                            maxLines: 3,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(
+                                  color: scheme.onSurface.withValues(
+                                    alpha: 0.68,
+                                  ),
+                                ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              if (metrics.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final metric in metrics)
+                      DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: scheme.surfaceContainerHighest.withValues(
+                            alpha: 0.35,
+                          ),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: scheme.outlineVariant.withValues(alpha: 0.6),
+                          ),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 8,
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                metric.label,
+                                style: Theme.of(context).textTheme.labelMedium
+                                    ?.copyWith(
+                                      color: scheme.onSurfaceVariant,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                '${metric.value}',
+                                style: Theme.of(context).textTheme.titleSmall
+                                    ?.copyWith(fontWeight: FontWeight.w800),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+            ],
+          ),
         ),
       ),
     );

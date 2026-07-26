@@ -5,14 +5,21 @@ class ClubSummary {
     required this.name,
     required this.city,
     required this.tournamentsCount,
+    this.address = '',
+    this.latitude,
+    this.longitude,
   });
 
   final String name;
   final String city;
   final int tournamentsCount;
+  final String address;
+  final double? latitude;
+  final double? longitude;
 
-  String get searchText => '$name $city'.toLowerCase();
-  String get mapQuery => '$name, $city';
+  String get searchText => '$name $city $address'.toLowerCase();
+  String get mapQuery =>
+      address.isEmpty ? '$name, $city' : '$name, $address, $city';
 }
 
 enum _ClubsView { map, list }
@@ -29,14 +36,25 @@ class ClubsPage extends StatefulWidget {
 
 class _ClubsPageState extends State<ClubsPage> {
   final TextEditingController searchController = TextEditingController();
+  final ScrollController cityScrollController = ScrollController();
+  final Map<String, GlobalKey> cityChipKeys = {};
   late ClubSummary? selectedClub = _initialClub();
   late String selectedCity = widget.initialCity;
   _ClubsView view = _ClubsView.map;
   String search = '';
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _scrollToSelectedCity(),
+    );
+  }
+
+  @override
   void dispose() {
     searchController.dispose();
+    cityScrollController.dispose();
     super.dispose();
   }
 
@@ -68,105 +86,219 @@ class _ClubsPageState extends State<ClubsPage> {
         .toSet()
         .toList();
     cities.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    final selectedIndex = cities.indexWhere(
+      (city) => city.toLowerCase() == selectedCity.toLowerCase(),
+    );
+    if (selectedIndex > 0) {
+      final selected = cities.removeAt(selectedIndex);
+      cities.insert(0, selected);
+    }
     return cities;
+  }
+
+  void _scrollToSelectedCity() {
+    final key = cityChipKeys[selectedCity.toLowerCase()];
+    final context = key?.currentContext;
+    if (context == null) {
+      return;
+    }
+    Scrollable.ensureVisible(
+      context,
+      alignment: 0.5,
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeOut,
+    );
+  }
+
+  void _selectCity(String city) {
+    setState(() {
+      selectedCity = city;
+      final cityClubs = widget.clubs.where(
+        (club) => club.city.toLowerCase() == city.toLowerCase(),
+      );
+      selectedClub = cityClubs.isEmpty ? null : cityClubs.first;
+    });
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _scrollToSelectedCity(),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final clubs = visibleClubs;
+    final cityChips = availableCities;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Клубы')),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
-            child: Column(
+      body: clubs.isEmpty
+          ? _EmptyState(
+              icon: Icons.store_mall_directory_outlined,
+              title: 'Клубы не найдены',
+              text: 'Для города $selectedCity клубы пока не загружены.',
+            )
+          : view == _ClubsView.map
+          ? Stack(
               children: [
-                SearchBar(
-                  controller: searchController,
-                  hintText: 'Клуб в городе $selectedCity',
-                  elevation: const WidgetStatePropertyAll(0),
-                  constraints: const BoxConstraints(minHeight: 48),
-                  leading: const Icon(Icons.search),
-                  trailing: [
-                    if (search.isNotEmpty)
-                      IconButton(
-                        tooltip: 'Очистить',
-                        onPressed: () {
-                          searchController.clear();
-                          setState(() => search = '');
-                        },
-                        icon: const Icon(Icons.close),
-                      ),
-                  ],
-                  onChanged: (value) => setState(() => search = value),
+                Positioned.fill(
+                  child: _ClubMapPreview(
+                    clubs: clubs,
+                    selectedClub: selectedClub,
+                    onClubSelected: (club) {
+                      setState(() => selectedClub = club);
+                    },
+                  ),
                 ),
-                if (availableCities.length > 1) ...[
-                  const SizedBox(height: 8),
-                  SizedBox(
-                    height: 40,
-                    child: ListView.separated(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: availableCities.length,
-                      separatorBuilder: (_, _) => const SizedBox(width: 8),
-                      itemBuilder: (context, index) {
-                        final city = availableCities[index];
-                        return ChoiceChip(
-                          label: Text(city),
-                          selected:
-                              selectedCity.toLowerCase() == city.toLowerCase(),
-                          onSelected: (_) => setState(() {
-                            selectedCity = city;
-                            final cityClubs = widget.clubs.where(
-                              (club) =>
-                                  club.city.toLowerCase() == city.toLowerCase(),
-                            );
-                            selectedClub = cityClubs.isEmpty
-                                ? null
-                                : cityClubs.first;
-                          }),
-                        );
-                      },
+                Positioned(
+                  left: 16,
+                  right: 16,
+                  top: 12,
+                  child: SafeArea(
+                    bottom: false,
+                    child: Column(
+                      children: [
+                        _MapOverlayPanel(
+                          child: SearchBar(
+                            controller: searchController,
+                            hintText: 'Клуб в городе $selectedCity',
+                            elevation: const WidgetStatePropertyAll(0),
+                            constraints: const BoxConstraints(minHeight: 48),
+                            leading: const Icon(Icons.search),
+                            trailing: [
+                              if (search.isNotEmpty)
+                                IconButton(
+                                  tooltip: 'Очистить',
+                                  onPressed: () {
+                                    searchController.clear();
+                                    setState(() => search = '');
+                                  },
+                                  icon: const Icon(Icons.close),
+                                ),
+                            ],
+                            onChanged: (value) =>
+                                setState(() => search = value),
+                          ),
+                        ),
+                        if (cityChips.length > 1) ...[
+                          const SizedBox(height: 10),
+                          SizedBox(
+                            height: 40,
+                            child: ListView.separated(
+                              controller: cityScrollController,
+                              scrollDirection: Axis.horizontal,
+                              itemCount: cityChips.length,
+                              separatorBuilder: (_, _) =>
+                                  const SizedBox(width: 8),
+                              itemBuilder: (context, index) {
+                                final city = cityChips[index];
+                                final key = cityChipKeys.putIfAbsent(
+                                  city.toLowerCase(),
+                                  GlobalKey.new,
+                                );
+                                return KeyedSubtree(
+                                  key: key,
+                                  child: _MapOverlayPanel(
+                                    child: ChoiceChip(
+                                      label: Text(city),
+                                      selected:
+                                          selectedCity.toLowerCase() ==
+                                          city.toLowerCase(),
+                                      onSelected: (_) => _selectCity(city),
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 10),
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: _MapOverlayPanel(
+                            child: SegmentedButton<_ClubsView>(
+                              segments: const [
+                                ButtonSegment(
+                                  value: _ClubsView.map,
+                                  icon: Icon(Icons.map_outlined),
+                                  label: Text('Карта'),
+                                ),
+                                ButtonSegment(
+                                  value: _ClubsView.list,
+                                  icon: Icon(Icons.format_list_bulleted),
+                                  label: Text('Список'),
+                                ),
+                              ],
+                              selected: {view},
+                              onSelectionChanged: (value) =>
+                                  setState(() => view = value.single),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                ],
-                const SizedBox(height: 8),
-                SegmentedButton<_ClubsView>(
-                  segments: const [
-                    ButtonSegment(
-                      value: _ClubsView.map,
-                      icon: Icon(Icons.map_outlined),
-                      label: Text('Карта'),
-                    ),
-                    ButtonSegment(
-                      value: _ClubsView.list,
-                      icon: Icon(Icons.format_list_bulleted),
-                      label: Text('Список'),
-                    ),
-                  ],
-                  selected: {view},
-                  onSelectionChanged: (value) =>
-                      setState(() => view = value.single),
                 ),
               ],
-            ),
-          ),
-          Expanded(
-            child: clubs.isEmpty
-                ? _EmptyState(
-                    icon: Icons.store_mall_directory_outlined,
-                    title: 'Клубы не найдены',
-                    text: 'Для города $selectedCity клубы пока не загружены.',
-                  )
-                : view == _ClubsView.map
-                ? ListView(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            )
+          : Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
+                  child: Column(
                     children: [
-                      _ClubMapPreview(clubs: clubs, selectedClub: selectedClub),
+                      SearchBar(
+                        controller: searchController,
+                        hintText: 'Клуб в городе $selectedCity',
+                        elevation: const WidgetStatePropertyAll(0),
+                        constraints: const BoxConstraints(minHeight: 48),
+                        leading: const Icon(Icons.search),
+                        trailing: [
+                          if (search.isNotEmpty)
+                            IconButton(
+                              tooltip: 'Очистить',
+                              onPressed: () {
+                                searchController.clear();
+                                setState(() => search = '');
+                              },
+                              icon: const Icon(Icons.close),
+                            ),
+                        ],
+                        onChanged: (value) => setState(() => search = value),
+                      ),
+                      if (cityChips.length > 1) ...[
+                        const SizedBox(height: 8),
+                        SizedBox(
+                          height: 40,
+                          child: ListView.separated(
+                            controller: cityScrollController,
+                            scrollDirection: Axis.horizontal,
+                            itemCount: cityChips.length,
+                            separatorBuilder: (_, _) =>
+                                const SizedBox(width: 8),
+                            itemBuilder: (context, index) {
+                              final city = cityChips[index];
+                              final key = cityChipKeys.putIfAbsent(
+                                city.toLowerCase(),
+                                GlobalKey.new,
+                              );
+                              return KeyedSubtree(
+                                key: key,
+                                child: ChoiceChip(
+                                  label: Text(city),
+                                  selected:
+                                      selectedCity.toLowerCase() ==
+                                      city.toLowerCase(),
+                                  onSelected: (_) => _selectCity(city),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ],
                     ],
-                  )
-                : ListView.separated(
+                  ),
+                ),
+                Expanded(
+                  child: ListView.separated(
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                     itemCount: clubs.length,
                     separatorBuilder: (_, _) => const SizedBox(height: 8),
@@ -204,18 +336,23 @@ class _ClubsPageState extends State<ClubsPage> {
                       );
                     },
                   ),
-          ),
-        ],
-      ),
+                ),
+              ],
+            ),
     );
   }
 }
 
 class _ClubMapPreview extends StatefulWidget {
-  const _ClubMapPreview({required this.clubs, required this.selectedClub});
+  const _ClubMapPreview({
+    required this.clubs,
+    required this.selectedClub,
+    required this.onClubSelected,
+  });
 
   final List<ClubSummary> clubs;
   final ClubSummary? selectedClub;
+  final ValueChanged<ClubSummary> onClubSelected;
 
   @override
   State<_ClubMapPreview> createState() => _ClubMapPreviewState();
@@ -227,34 +364,45 @@ class _ClubMapPreviewState extends State<_ClubMapPreview> {
     defaultValue: '',
   );
 
-  Future<List<_ClubMapPoint>>? pointsFuture;
+  Future<_ClubMapData>? pointsFuture;
 
   @override
   void initState() {
     super.initState();
-    pointsFuture = _geocodeClubs(widget.clubs);
+    pointsFuture = _loadMapData(widget.clubs);
   }
 
   @override
   void didUpdateWidget(covariant _ClubMapPreview oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (_clubsSignature(oldWidget.clubs) != _clubsSignature(widget.clubs)) {
-      pointsFuture = _geocodeClubs(widget.clubs);
+      pointsFuture = _loadMapData(widget.clubs);
     }
   }
 
-  String _clubsSignature(List<ClubSummary> clubs) =>
-      clubs.map((club) => club.mapQuery).join('|');
+  String _clubsSignature(List<ClubSummary> clubs) => clubs
+      .map(
+        (club) =>
+            '${club.mapQuery}:${club.latitude ?? ''}:${club.longitude ?? ''}',
+      )
+      .join('|');
 
-  Future<List<_ClubMapPoint>> _geocodeClubs(List<ClubSummary> clubs) async {
+  Future<_ClubMapData> _loadMapData(List<ClubSummary> clubs) async {
     final token = await _loadMapboxToken();
-    if (token.isEmpty) {
-      return const [];
-    }
-    final points = await Future.wait(
-      clubs.take(25).map((club) => _geocode(club, token)),
+    final city = clubs.firstOrNull?.city.trim() ?? '';
+    final poiPoints = city.isEmpty || token.isEmpty
+        ? const <_PoiMapPoint>[]
+        : await _loadPoiPoints(city, token);
+    final clubPoints = await Future.wait(
+      clubs.take(25).map((club) => _resolveClubPoint(club, token, poiPoints)),
     );
-    return points.whereType<_ClubMapPoint>().toList();
+    final resolvedClubPoints = clubPoints.whereType<_ClubMapPoint>().toList();
+    final enrichedPoiPoints = _linkPois(poiPoints, resolvedClubPoints);
+    return _ClubMapData(
+      token: token,
+      clubPoints: resolvedClubPoints,
+      poiPoints: enrichedPoiPoints,
+    );
   }
 
   Future<String> _loadMapboxToken() async {
@@ -276,124 +424,546 @@ class _ClubMapPreviewState extends State<_ClubMapPreview> {
     }
   }
 
-  Future<_ClubMapPoint?> _geocode(ClubSummary club, String token) async {
-    final uri = Uri.https(
-      'api.mapbox.com',
-      '/geocoding/v5/mapbox.places/${Uri.encodeComponent(club.mapQuery)}.json',
-      {'access_token': token, 'limit': '1', 'language': 'ru', 'country': 'ru'},
-    );
+  Future<_ClubMapPoint?> _resolveClubPoint(
+    ClubSummary club,
+    String token,
+    List<_PoiMapPoint> poiPoints,
+  ) async {
+    if (club.latitude != null && club.longitude != null) {
+      return _ClubMapPoint(
+        club: club,
+        point: _MapPoint(latitude: club.latitude!, longitude: club.longitude!),
+      );
+    }
+    final poiMatch = _matchPoiToClub(club, poiPoints);
+    if (poiMatch != null) {
+      return _ClubMapPoint(club: club, point: poiMatch.point);
+    }
+    if (token.isEmpty) {
+      return _searchPointWithNominatim(club);
+    }
+    final searchboxPoint = await _searchPointWithSearchBox(club, token);
+    if (searchboxPoint != null) {
+      return searchboxPoint;
+    }
+    final geocodedPoint = await _geocodeClub(club, token);
+    if (geocodedPoint != null) {
+      return geocodedPoint;
+    }
+    return _searchPointWithNominatim(club);
+  }
+
+  Future<_ClubMapPoint?> _geocodeClub(ClubSummary club, String token) async {
+    for (final query in _clubSearchQueries(club)) {
+      final uri = Uri.parse(
+        'https://api.mapbox.com/geocoding/v5/mapbox.places/'
+        '${Uri.encodeComponent(query)}.json'
+        '?${Uri(queryParameters: {'access_token': token, 'limit': '1', 'language': 'ru', 'country': 'ru'}).query}',
+      );
+      try {
+        final response = await http
+            .get(uri, headers: const {'User-Agent': 'LLB-Mobile/1.0'})
+            .timeout(const Duration(seconds: 8));
+        if (response.statusCode < 200 || response.statusCode >= 300) {
+          continue;
+        }
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final features = data['features'] as List<dynamic>? ?? const [];
+        if (features.isEmpty) {
+          continue;
+        }
+        final feature = features.first as Map<String, dynamic>;
+        if (!_isSpecificFeature(feature, club, query: query)) {
+          continue;
+        }
+        final center = feature['center'];
+        if (center is! List || center.length < 2) {
+          continue;
+        }
+        return _ClubMapPoint(
+          club: club,
+          point: _MapPoint(
+            latitude: (center[1] as num).toDouble(),
+            longitude: (center[0] as num).toDouble(),
+          ),
+        );
+      } catch (_) {
+        continue;
+      }
+    }
+    return null;
+  }
+
+  Future<_ClubMapPoint?> _searchPointWithSearchBox(
+    ClubSummary club,
+    String token,
+  ) async {
+    for (final query in _clubSearchQueries(club)) {
+      final uri = Uri.https('api.mapbox.com', '/search/searchbox/v1/forward', {
+        'q': query,
+        'language': 'ru',
+        'limit': '5',
+        'access_token': token,
+      });
+      try {
+        final response = await http
+            .get(uri, headers: const {'User-Agent': 'LLB-Mobile/1.0'})
+            .timeout(const Duration(seconds: 8));
+        if (response.statusCode < 200 || response.statusCode >= 300) {
+          continue;
+        }
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final features = data['features'] as List<dynamic>? ?? const [];
+        for (final feature in features.whereType<Map<String, dynamic>>()) {
+          if (!_matchesSearchboxClub(feature, club, query)) {
+            continue;
+          }
+          final point = _searchboxPoint(feature);
+          if (point == null) {
+            continue;
+          }
+          return _ClubMapPoint(club: club, point: point);
+        }
+      } catch (_) {
+        continue;
+      }
+    }
+    return null;
+  }
+
+  Future<_ClubMapPoint?> _searchPointWithNominatim(ClubSummary club) async {
+    for (final query in _clubSearchQueries(club)) {
+      final uri = Uri.https('nominatim.openstreetmap.org', '/search', {
+        'q': query,
+        'format': 'jsonv2',
+        'limit': '1',
+      });
+      try {
+        final response = await http
+            .get(uri, headers: const {'User-Agent': 'LLB-Mobile/1.0'})
+            .timeout(const Duration(seconds: 8));
+        if (response.statusCode < 200 || response.statusCode >= 300) {
+          continue;
+        }
+        final items = jsonDecode(response.body) as List<dynamic>;
+        if (items.isEmpty) {
+          continue;
+        }
+        final item = items.first as Map<String, dynamic>;
+        final lat = double.tryParse('${item['lat'] ?? ''}');
+        final lon = double.tryParse('${item['lon'] ?? ''}');
+        if (lat == null || lon == null) {
+          continue;
+        }
+        final label = '${item['display_name'] ?? item['name'] ?? ''}'
+            .toLowerCase();
+        if (!_queryLooksPrecise(query) && !_matchesClubText(club, label)) {
+          continue;
+        }
+        return _ClubMapPoint(
+          club: club,
+          point: _MapPoint(latitude: lat, longitude: lon),
+        );
+      } catch (_) {
+        continue;
+      }
+    }
+    return null;
+  }
+
+  Future<List<_PoiMapPoint>> _loadPoiPoints(String city, String token) async {
+    final uri = Uri.https('api.mapbox.com', '/search/searchbox/v1/forward', {
+      'q': 'бильярд $city',
+      'language': 'ru',
+      'limit': '12',
+      'access_token': token,
+    });
     try {
-      final response = await http.get(uri).timeout(const Duration(seconds: 8));
+      final response = await http
+          .get(uri, headers: const {'User-Agent': 'LLB-Mobile/1.0'})
+          .timeout(const Duration(seconds: 8));
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        return null;
+        return _loadPoiPointsFromNominatim(city);
       }
       final data = jsonDecode(response.body) as Map<String, dynamic>;
       final features = data['features'] as List<dynamic>? ?? const [];
-      if (features.isEmpty) {
-        return null;
+      final points = <_PoiMapPoint>[];
+      for (final feature in features.whereType<Map<String, dynamic>>()) {
+        final point = _searchboxPoint(feature);
+        if (point == null) {
+          continue;
+        }
+        final properties =
+            feature['properties'] as Map<String, dynamic>? ?? const {};
+        final poiName =
+            '${properties['name'] ?? properties['name_preferred'] ?? ''}'
+                .trim();
+        if (poiName.isEmpty) {
+          continue;
+        }
+        final fullAddress =
+            '${properties['full_address'] ?? properties['place_formatted'] ?? properties['address'] ?? ''}'
+                .trim();
+        points.add(
+          _PoiMapPoint(name: poiName, address: fullAddress, point: point),
+        );
       }
-      final center = (features.first as Map<String, dynamic>)['center'];
-      if (center is! List || center.length < 2) {
-        return null;
+      if (points.isEmpty) {
+        return _loadPoiPointsFromNominatim(city);
       }
-      return _ClubMapPoint(
-        club: club,
-        mapboxToken: token,
-        point: _MapPoint(
-          latitude: (center[1] as num).toDouble(),
-          longitude: (center[0] as num).toDouble(),
-        ),
-      );
+      return points;
     } catch (_) {
-      return null;
+      return _loadPoiPointsFromNominatim(city);
     }
   }
 
-  String _staticMapUrl(List<_ClubMapPoint> points) {
-    final overlays = points
-        .map((item) {
-          final selected =
-              widget.selectedClub?.name == item.club.name &&
-              widget.selectedClub?.city == item.club.city;
-          final color = selected ? '0b5f49' : '0f6f55';
-          final point = item.point;
-          return 'pin-s+$color(${point.longitude.toStringAsFixed(6)},'
-              '${point.latitude.toStringAsFixed(6)})';
-        })
-        .join(',');
-    return Uri.https(
-      'api.mapbox.com',
-      '/styles/v1/mapbox/streets-v12/static/$overlays/auto/900x700@2x',
-      {'access_token': points.first.mapboxToken},
-    ).toString();
+  Future<List<_PoiMapPoint>> _loadPoiPointsFromNominatim(String city) async {
+    final points = <_PoiMapPoint>[];
+    final seen = <String>{};
+    for (final query in ['бильярд $city', 'бильярдный клуб $city']) {
+      final uri = Uri.https('nominatim.openstreetmap.org', '/search', {
+        'q': query,
+        'format': 'jsonv2',
+        'limit': '8',
+      });
+      try {
+        final response = await http
+            .get(uri, headers: const {'User-Agent': 'LLB-Mobile/1.0'})
+            .timeout(const Duration(seconds: 8));
+        if (response.statusCode < 200 || response.statusCode >= 300) {
+          continue;
+        }
+        final items = jsonDecode(response.body) as List<dynamic>;
+        for (final item in items.whereType<Map<String, dynamic>>()) {
+          final lat = double.tryParse('${item['lat'] ?? ''}');
+          final lon = double.tryParse('${item['lon'] ?? ''}');
+          if (lat == null || lon == null) {
+            continue;
+          }
+          final name = '${item['name'] ?? item['display_name'] ?? ''}'.trim();
+          final address = '${item['display_name'] ?? ''}'.trim();
+          if (name.isEmpty || address.isEmpty) {
+            continue;
+          }
+          final key =
+              '${name.toLowerCase()}|${lat.toStringAsFixed(5)}|${lon.toStringAsFixed(5)}';
+          if (!seen.add(key)) {
+            continue;
+          }
+          points.add(
+            _PoiMapPoint(
+              name: name,
+              address: address,
+              point: _MapPoint(latitude: lat, longitude: lon),
+            ),
+          );
+        }
+      } catch (_) {
+        continue;
+      }
+    }
+    return points;
+  }
+
+  bool _isSpecificFeature(
+    Map<String, dynamic> feature,
+    ClubSummary club, {
+    required String query,
+  }) {
+    final placeTypes = (feature['place_type'] as List<dynamic>? ?? const [])
+        .map((item) => '$item'.toLowerCase())
+        .toList();
+    final label = '${feature['text'] ?? ''} ${feature['place_name'] ?? ''}'
+        .toLowerCase();
+    if (_queryLooksPrecise(query)) {
+      return true;
+    }
+    final compactLabel = label.replaceAll(RegExp(r'[^a-zа-я0-9]+'), '');
+    final compactClub = _compactClubName(club.name);
+    if (compactClub.isNotEmpty && compactLabel.contains(compactClub)) {
+      return true;
+    }
+    if (placeTypes.contains('poi') || placeTypes.contains('address')) {
+      return true;
+    }
+    return false;
+  }
+
+  _MapPoint? _searchboxPoint(Map<String, dynamic> feature) {
+    final properties =
+        feature['properties'] as Map<String, dynamic>? ?? const {};
+    final coordinates =
+        properties['coordinates'] as Map<String, dynamic>? ?? const {};
+    final lat = coordinates['latitude'];
+    final lon = coordinates['longitude'];
+    if (lat is num && lon is num) {
+      return _MapPoint(latitude: lat.toDouble(), longitude: lon.toDouble());
+    }
+    final geometry = feature['geometry'] as Map<String, dynamic>? ?? const {};
+    final center = geometry['coordinates'];
+    if (center is List && center.length >= 2) {
+      return _MapPoint(
+        latitude: (center[1] as num).toDouble(),
+        longitude: (center[0] as num).toDouble(),
+      );
+    }
+    return null;
+  }
+
+  bool _matchesSearchboxClub(
+    Map<String, dynamic> feature,
+    ClubSummary club,
+    String query,
+  ) {
+    if (_queryLooksPrecise(query)) {
+      return true;
+    }
+    final properties =
+        feature['properties'] as Map<String, dynamic>? ?? const {};
+    final label =
+        '${properties['name'] ?? ''} ${properties['name_preferred'] ?? ''} ${properties['full_address'] ?? ''}'
+            .toLowerCase();
+    return _matchesClubText(club, label);
+  }
+
+  bool _matchesClubText(ClubSummary club, String label) {
+    final normalizedLabel = _normalizeClubName(label);
+    final compactLabel = _compactClubName(label);
+    final normalizedClub = _normalizeClubName(club.name);
+    final compactClub = _compactClubName(club.name);
+    if (normalizedClub.isNotEmpty &&
+        (normalizedLabel == normalizedClub ||
+            normalizedLabel.contains(normalizedClub) ||
+            normalizedClub.contains(normalizedLabel))) {
+      return true;
+    }
+    if (compactClub.isNotEmpty &&
+        compactLabel.isNotEmpty &&
+        (compactLabel == compactClub ||
+            compactLabel.contains(compactClub) ||
+            compactClub.contains(compactLabel))) {
+      return true;
+    }
+    for (final alias in _clubAliases(club)) {
+      if (alias.isNotEmpty && label.contains(alias)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool _queryLooksPrecise(String query) {
+    final normalized = query.toLowerCase();
+    return RegExp(r'\d').hasMatch(normalized) ||
+        normalized.contains('просп') ||
+        normalized.contains('шоссе') ||
+        normalized.contains('набереж') ||
+        normalized.contains('улиц') ||
+        normalized.contains('ул.') ||
+        normalized.contains('к.') ||
+        normalized.contains('корп');
+  }
+
+  List<String> _clubSearchQueries(ClubSummary club) {
+    final queries = <String>{};
+    if (club.address.trim().isNotEmpty) {
+      queries.add('${club.address.trim()}, ${club.city}');
+      queries.add('${club.name}, ${club.address.trim()}, ${club.city}');
+    }
+    final hint = _clubAddressHint(club);
+    if (hint.isNotEmpty) {
+      queries.add(hint);
+    }
+    for (final alias in _clubAliases(club)) {
+      queries.add('$alias, ${club.city}');
+      queries.add('бильярдный клуб $alias, ${club.city}');
+    }
+    queries.add('${club.name}, ${club.city}');
+    return queries.where((query) => query.trim().isNotEmpty).toList();
+  }
+
+  String _clubAddressHint(ClubSummary club) {
+    final key = _compactClubName(club.name);
+    final city = club.city.toLowerCase();
+    const hints = <String, String>{
+      'frbs': 'набережная Обводного канала, 118С, Санкт-Петербург',
+      'playpool': 'Коломяжский проспект, 19 к2, Санкт-Петербург',
+      'цбсольгино': 'Приморское шоссе, 4 к1, Санкт-Петербург',
+      'ольгино': 'Приморское шоссе, 4 к1, Санкт-Петербург',
+      'легендапитер': 'проспект Просвещения, 43, Санкт-Петербург',
+      'maximatic': 'проспект Космонавтов, 55, Санкт-Петербург',
+      'максиматик': 'проспект Космонавтов, 55, Санкт-Петербург',
+      'зебра': 'проспект Косыгина, 30 к1, Санкт-Петербург',
+    };
+    if (city.contains('санкт-петербург')) {
+      return hints[key] ?? '';
+    }
+    return '';
+  }
+
+  List<String> _clubAliases(ClubSummary club) {
+    final normalized = _normalizeClubName(club.name);
+    final aliases = <String>{club.name.trim()};
+    final special = _clubAlias(normalized);
+    if (special.isNotEmpty) {
+      aliases.add(special);
+    }
+    if (normalized.contains('maximatic') || normalized.contains('максиматик')) {
+      aliases.add('MAXImatic');
+      aliases.add('Максиматик');
+    }
+    if (normalized.contains('frbs')) {
+      aliases.add('FRBS-club');
+      aliases.add('FRBS club');
+    }
+    if (normalized.contains('ольгино')) {
+      aliases.add('ЦБС Ольгино');
+      aliases.add('Центр бильярдного спорта Ольгино');
+    }
+    if (normalized.contains('playpool') || normalized.contains('play pool')) {
+      aliases.add('PLAYPOOL');
+      aliases.add('Play Pool');
+    }
+    if (normalized.contains('зебра')) {
+      aliases.add('Zebra');
+    }
+    if (normalized.contains('легенда')) {
+      aliases.add('Легенда-Питер');
+      aliases.add('Легенда Питер');
+    }
+    return aliases.where((value) => value.trim().isNotEmpty).toList();
+  }
+
+  _PoiMapPoint? _matchPoiToClub(
+    ClubSummary club,
+    List<_PoiMapPoint> poiPoints,
+  ) {
+    final normalizedClub = _normalizeClubName(club.name);
+    final compactClub = _compactClubName(club.name);
+    for (final poi in poiPoints) {
+      final normalizedPoi = _normalizeClubName(poi.name);
+      final compactPoi = _compactClubName(poi.name);
+      final addressText = '${poi.name} ${poi.address}'.toLowerCase();
+      if (normalizedClub.isNotEmpty &&
+          (normalizedPoi == normalizedClub ||
+              normalizedPoi.contains(normalizedClub) ||
+              normalizedClub.contains(normalizedPoi))) {
+        return poi;
+      }
+      if (compactClub.isNotEmpty &&
+          compactPoi.isNotEmpty &&
+          (compactPoi == compactClub ||
+              compactPoi.contains(compactClub) ||
+              compactClub.contains(compactPoi))) {
+        return poi;
+      }
+      final alias = _clubAlias(normalizedClub);
+      if (alias.isNotEmpty && addressText.contains(alias)) {
+        return poi;
+      }
+    }
+    return null;
+  }
+
+  List<_PoiMapPoint> _linkPois(
+    List<_PoiMapPoint> poiPoints,
+    List<_ClubMapPoint> clubPoints,
+  ) {
+    return [
+      for (final poi in poiPoints)
+        poi.copyWith(linkedClubKey: _matchClub(poi.name, clubPoints)),
+    ];
+  }
+
+  String? _matchClub(String poiName, List<_ClubMapPoint> clubPoints) {
+    final normalizedPoi = _normalizeClubName(poiName);
+    final compactPoi = _compactClubName(poiName);
+    if (normalizedPoi.isEmpty) {
+      return null;
+    }
+    for (final item in clubPoints) {
+      final normalizedClub = _normalizeClubName(item.club.name);
+      final compactClub = _compactClubName(item.club.name);
+      if (normalizedClub.isEmpty) {
+        continue;
+      }
+      if (normalizedPoi == normalizedClub ||
+          normalizedPoi.contains(normalizedClub) ||
+          normalizedClub.contains(normalizedPoi)) {
+        return '${item.club.city.toLowerCase()}::${item.club.name.toLowerCase()}';
+      }
+      if (compactPoi.isNotEmpty &&
+          compactClub.isNotEmpty &&
+          (compactPoi == compactClub ||
+              compactPoi.contains(compactClub) ||
+              compactClub.contains(compactPoi))) {
+        return '${item.club.city.toLowerCase()}::${item.club.name.toLowerCase()}';
+      }
+    }
+    return null;
+  }
+
+  String _compactClubName(String value) =>
+      _normalizeClubName(value).replaceAll(' ', '');
+
+  String _clubAlias(String normalizedClub) {
+    if (normalizedClub.contains('ольгино')) {
+      return 'ольгино';
+    }
+    if (normalizedClub.contains('frbs')) {
+      return 'frbs';
+    }
+    if (normalizedClub.contains('playpool') ||
+        normalizedClub.contains('play pool')) {
+      return 'play pool';
+    }
+    if (normalizedClub.contains('alibi') || normalizedClub.contains('алиби')) {
+      return 'алиби';
+    }
+    return normalizedClub;
+  }
+
+  String _normalizeClubName(String value) {
+    final common = RegExp(
+      r'\b(бильярд|бильярдный|клуб|club|pool|billiard|центр|академия)\b',
+      caseSensitive: false,
+    );
+    return value
+        .toLowerCase()
+        .replaceAll(common, ' ')
+        .replaceAll(RegExp(r'[^a-zа-я0-9]+', caseSensitive: false), ' ')
+        .trim()
+        .replaceAll(RegExp(r'\s+'), ' ');
   }
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(8),
-      child: AspectRatio(
-        aspectRatio: 4 / 5,
-        child: DecoratedBox(
-          decoration: BoxDecoration(color: scheme.surfaceContainerHighest),
-          child: FutureBuilder<List<_ClubMapPoint>>(
-            future: pointsFuture,
-            builder: (context, snapshot) {
-              final points = snapshot.data ?? const [];
-              if (snapshot.connectionState != ConnectionState.done) {
-                return const Center(child: CircularProgressIndicator());
-              }
-              if (points.isEmpty && _mapboxToken.isEmpty) {
-                return const _EmptyState(
-                  icon: Icons.map_outlined,
-                  title: 'Карта недоступна',
-                  text: 'Не удалось получить Mapbox token.',
-                );
-              }
-              if (points.isEmpty) {
-                return const _EmptyState(
-                  icon: Icons.location_off_outlined,
-                  title: 'Координаты не найдены',
-                  text: 'Mapbox не нашел клубы выбранного города.',
-                );
-              }
-              return Stack(
-                fit: StackFit.expand,
-                children: [
-                  Image.network(
-                    _staticMapUrl(points),
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, _, _) => const _EmptyState(
-                      icon: Icons.map_outlined,
-                      title: 'Карта не загрузилась',
-                      text: 'Не удалось загрузить карту Mapbox.',
-                    ),
-                  ),
-                  Positioned(
-                    left: 12,
-                    right: 12,
-                    bottom: 12,
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: scheme.surface.withValues(alpha: 0.92),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(10),
-                        child: Text(
-                          '${points.length} клубов на карте',
-                          style: Theme.of(context).textTheme.titleSmall
-                              ?.copyWith(fontWeight: FontWeight.w800),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              );
-            },
-          ),
-        ),
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      ),
+      child: FutureBuilder<_ClubMapData>(
+        future: pointsFuture,
+        builder: (context, snapshot) {
+          final data =
+              snapshot.data ??
+              const _ClubMapData(token: '', clubPoints: [], poiPoints: []);
+          if (snapshot.connectionState != ConnectionState.done) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (data.clubPoints.isEmpty && data.poiPoints.isEmpty) {
+            return const _EmptyState(
+              icon: Icons.map_outlined,
+              title: 'Точек на карте пока нет',
+              text: 'Не нашлись ни наши клубы, ни бильярдные POI.',
+            );
+          }
+          return _LiveClubMap(
+            data: data,
+            selectedClub: widget.selectedClub,
+            onClubSelected: widget.onClubSelected,
+          );
+        },
       ),
     );
   }
@@ -407,15 +977,333 @@ class _MapPoint {
 }
 
 class _ClubMapPoint {
-  const _ClubMapPoint({
-    required this.club,
-    required this.point,
-    required this.mapboxToken,
-  });
+  const _ClubMapPoint({required this.club, required this.point});
 
   final ClubSummary club;
   final _MapPoint point;
-  final String mapboxToken;
+}
+
+class _PoiMapPoint {
+  const _PoiMapPoint({
+    required this.name,
+    required this.address,
+    required this.point,
+    this.linkedClubKey,
+  });
+
+  final String name;
+  final String address;
+  final _MapPoint point;
+  final String? linkedClubKey;
+
+  _PoiMapPoint copyWith({String? linkedClubKey}) {
+    return _PoiMapPoint(
+      name: name,
+      address: address,
+      point: point,
+      linkedClubKey: linkedClubKey ?? this.linkedClubKey,
+    );
+  }
+}
+
+class _ClubMapData {
+  const _ClubMapData({
+    required this.token,
+    required this.clubPoints,
+    required this.poiPoints,
+  });
+
+  final String token;
+  final List<_ClubMapPoint> clubPoints;
+  final List<_PoiMapPoint> poiPoints;
+}
+
+class _LiveClubMap extends StatefulWidget {
+  const _LiveClubMap({
+    required this.data,
+    required this.selectedClub,
+    required this.onClubSelected,
+  });
+
+  final _ClubMapData data;
+  final ClubSummary? selectedClub;
+  final ValueChanged<ClubSummary> onClubSelected;
+
+  @override
+  State<_LiveClubMap> createState() => _LiveClubMapState();
+}
+
+class _LiveClubMapState extends State<_LiveClubMap> {
+  final MapController mapController = MapController();
+
+  String _clubKey(ClubSummary club) =>
+      '${club.city.toLowerCase()}::${club.name.toLowerCase()}';
+
+  @override
+  void didUpdateWidget(covariant _LiveClubMap oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final oldKey = oldWidget.selectedClub == null
+        ? null
+        : _clubKey(oldWidget.selectedClub!);
+    final newKey = widget.selectedClub == null
+        ? null
+        : _clubKey(widget.selectedClub!);
+    if (oldKey != newKey) {
+      final focus = _focusPoint();
+      if (focus != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) {
+            return;
+          }
+          mapController.move(LatLng(focus.latitude, focus.longitude), 13.6);
+        });
+      }
+    }
+  }
+
+  _MapPoint? _focusPoint() {
+    final selected = widget.selectedClub;
+    if (selected != null) {
+      for (final item in widget.data.clubPoints) {
+        if (_clubKey(item.club) == _clubKey(selected)) {
+          return item.point;
+        }
+      }
+    }
+    if (widget.data.clubPoints.isNotEmpty) {
+      return widget.data.clubPoints.first.point;
+    }
+    if (widget.data.poiPoints.isNotEmpty) {
+      return widget.data.poiPoints.first.point;
+    }
+    return null;
+  }
+
+  LatLng _initialCenter() {
+    final focus = _focusPoint();
+    if (focus == null) {
+      return const LatLng(59.9386, 30.3141);
+    }
+    return LatLng(focus.latitude, focus.longitude);
+  }
+
+  double _initialZoom() => widget.selectedClub == null ? 11.0 : 13.0;
+
+  List<Marker> _buildMarkers(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final selectedKey = widget.selectedClub == null
+        ? null
+        : _clubKey(widget.selectedClub!);
+    final markers = <Marker>[
+      for (final poi in widget.data.poiPoints)
+        Marker(
+          point: LatLng(poi.point.latitude, poi.point.longitude),
+          width: 24,
+          height: 24,
+          child: IgnorePointer(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: poi.linkedClubKey == null
+                    ? const Color(0xFF4C82FB)
+                    : const Color(0xFFF7B32B),
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 2.5),
+                boxShadow: const [
+                  BoxShadow(color: Color(0x30000000), blurRadius: 4),
+                ],
+              ),
+              child: Center(
+                child: Icon(
+                  poi.linkedClubKey == null
+                      ? Icons.place_outlined
+                      : Icons.link_outlined,
+                  size: 12,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ),
+        ),
+      for (final item in widget.data.clubPoints)
+        Marker(
+          point: LatLng(item.point.latitude, item.point.longitude),
+          width: _clubKey(item.club) == selectedKey ? 30 : 24,
+          height: _clubKey(item.club) == selectedKey ? 30 : 24,
+          child: GestureDetector(
+            onTap: () => widget.onClubSelected(item.club),
+            child: Tooltip(
+              message: item.club.name,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: _clubKey(item.club) == selectedKey
+                      ? const Color(0xFF0B5F49)
+                      : scheme.primary,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 2.5),
+                  boxShadow: const [
+                    BoxShadow(color: Color(0x33000000), blurRadius: 6),
+                  ],
+                ),
+                child: Icon(
+                  Icons.storefront,
+                  size: _clubKey(item.club) == selectedKey ? 16 : 13,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ),
+        ),
+    ];
+    return markers;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        FlutterMap(
+          mapController: mapController,
+          options: MapOptions(
+            initialCenter: _initialCenter(),
+            initialZoom: _initialZoom(),
+          ),
+          children: [
+            TileLayer(
+              urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+              userAgentPackageName: 'su.llb.llb_mobile',
+            ),
+            MarkerLayer(markers: _buildMarkers(context)),
+          ],
+        ),
+        Positioned(
+          left: 12,
+          right: 12,
+          bottom: 12,
+          child: _MapSummaryCard(data: widget.data),
+        ),
+      ],
+    );
+  }
+}
+
+class _MapSummaryCard extends StatelessWidget {
+  const _MapSummaryCard({required this.data});
+
+  final _ClubMapData data;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: scheme.surface.withValues(alpha: 0.92),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              '${data.clubPoints.length} наших клубов · ${data.poiPoints.length} POI',
+              style: Theme.of(
+                context,
+              ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 4),
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              children: [
+                _LegendDot(
+                  color: Theme.of(context).colorScheme.primary,
+                  icon: Icons.storefront,
+                  label: 'Наш клуб',
+                ),
+                const _LegendDot(
+                  color: Color(0xFFF7B32B),
+                  icon: Icons.link_outlined,
+                  label: 'Похожий POI',
+                ),
+                const _LegendDot(
+                  color: Color(0xFF4C82FB),
+                  icon: Icons.place_outlined,
+                  label: 'Внешний POI',
+                ),
+              ],
+            ),
+            if (data.poiPoints.any((item) => item.linkedClubKey != null))
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  'Оранжевые точки похожи на наши клубы и помогают уточнять координаты',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LegendDot extends StatelessWidget {
+  const _LegendDot({
+    required this.color,
+    required this.icon,
+    required this.label,
+  });
+
+  final Color color;
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 18,
+          height: 18,
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white, width: 1.5),
+          ),
+          child: Icon(icon, size: 10, color: Colors.white),
+        ),
+        const SizedBox(width: 6),
+        Text(label, style: Theme.of(context).textTheme.bodySmall),
+      ],
+    );
+  }
+}
+
+class _MapOverlayPanel extends StatelessWidget {
+  const _MapOverlayPanel({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.94),
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x22000000),
+            blurRadius: 14,
+            offset: Offset(0, 6),
+          ),
+        ],
+      ),
+      child: child,
+    );
+  }
 }
 
 class MediaLibraryPage extends StatefulWidget {

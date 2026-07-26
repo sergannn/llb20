@@ -146,16 +146,16 @@ void main() {
 
     expect(find.text('Участники'), findsWidgets);
     await tester.scrollUntilVisible(
-      find.text('Сергеев Павел'),
+      find.byKey(const ValueKey('tournament-participant-p1')),
       220,
       scrollable: find.byType(Scrollable).last,
     );
-    expect(find.text('Сергеев Павел'), findsWidgets);
+    expect(find.byKey(const ValueKey('tournament-participant-p1')), findsOneWidget);
 
     await tester.drag(find.byType(Scrollable), const Offset(0, -300));
     await tester.pumpAndSettle();
 
-    expect(find.text('Калинин Андрей'), findsWidgets);
+    expect(find.byKey(const ValueKey('tournament-participant-p2')), findsOneWidget);
 
     await tester.drag(find.byType(Scrollable), const Offset(0, -700));
     await tester.pumpAndSettle();

@@ -133,7 +133,7 @@ class Player {
 
   String get participantSummary {
     final parts = [
-      if (participantPlace.isNotEmpty) 'место: $participantPlace',
+      if (participantPlace.trim().isNotEmpty) participantPlace.trim(),
       if (participantPoints.isNotEmpty) 'очки: $participantPoints',
     ];
     return parts.join(' · ');
@@ -258,18 +258,32 @@ class Tournament {
   final List<TournamentMedia> media;
 
   DateTime? get startsAt {
-    final match = RegExp(r'(\d{2})\.(\d{2})\.(\d{2,4})').firstMatch(dateLabel);
+    final match = RegExp(
+      r'(\d{2})\.(\d{2})\.(\d{2,4})(?:\D+(\d{2}):(\d{2}))?',
+    ).firstMatch(dateLabel);
     if (match == null) {
       return null;
     }
     final day = int.tryParse(match.group(1) ?? '');
     final month = int.tryParse(match.group(2) ?? '');
     final rawYear = int.tryParse(match.group(3) ?? '');
+    final hour = int.tryParse(match.group(4) ?? '') ?? 0;
+    final minute = int.tryParse(match.group(5) ?? '') ?? 0;
     if (day == null || month == null || rawYear == null) {
       return null;
     }
     final year = rawYear < 100 ? 2000 + rawYear : rawYear;
-    return DateTime(year, month, day);
+    return DateTime(year, month, day, hour, minute);
+  }
+
+  String get startDateText {
+    final match = RegExp(r'(\d{2}\.\d{2}\.\d{2,4})').firstMatch(dateLabel);
+    return match?.group(1) ?? dateLabel;
+  }
+
+  String get startTimeText {
+    final match = RegExp(r'(\d{2}:\d{2})').firstMatch(dateLabel);
+    return match?.group(1) ?? '';
   }
 
   Tournament copyWith({

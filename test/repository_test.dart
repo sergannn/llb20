@@ -114,6 +114,13 @@ void main() {
             headers: {'content-type': 'application/json; charset=utf-8'},
           );
         }
+        if (resource == 'clubs') {
+          return http.Response(
+            jsonEncode({'items': []}),
+            200,
+            headers: {'content-type': 'application/json; charset=utf-8'},
+          );
+        }
         if (resource == 'video_streams') {
           return http.Response(
             jsonEncode({'items': []}),
@@ -162,6 +169,9 @@ void main() {
       client: MockClient((request) async {
         final resource = request.url.queryParameters['resource'];
         if (resource == 'players') {
+          return http.Response(jsonEncode({'items': []}), 200);
+        }
+        if (resource == 'clubs') {
           return http.Response(jsonEncode({'items': []}), 200);
         }
         if (resource == 'video_streams') {
@@ -225,6 +235,9 @@ void main() {
           if (resource == 'tournaments') {
             return http.Response(jsonEncode({'items': []}), 200);
           }
+          if (resource == 'clubs') {
+            return http.Response(jsonEncode({'items': []}), 200);
+          }
           expect(resource, 'tournament');
           expect(request.url.queryParameters['id'], '2335');
           return http.Response(
@@ -273,7 +286,7 @@ void main() {
       expect(participant.membershipNodeId, '47036');
       expect(participant.participantPoints, '383');
       expect(participant.participantPlace, '2');
-      expect(participant.participantSummary, 'место: 2 · очки: 383');
+      expect(participant.participantSummary, '2 · очки: 383');
     },
   );
 }

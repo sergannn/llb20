@@ -1,0 +1,792 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Vision Marker Test</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f4f6f8;
+      --panel: #ffffff;
+      --line: #d8dee6;
+      --text: #18212b;
+      --muted: #5c6773;
+      --accent: #1f7aec;
+      --ok: #119c68;
+      --danger: #d64545;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .page {
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 32px;
+      line-height: 1.1;
+    }
+
+    .lead {
+      margin: 0 0 24px;
+      color: var(--muted);
+      max-width: 920px;
+      font-size: 15px;
+      line-height: 1.5;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 360px minmax(0, 1fr);
+      gap: 20px;
+      align-items: start;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 16px;
+      box-shadow: 0 8px 24px rgba(16, 24, 40, 0.06);
+    }
+
+    .controls {
+      display: grid;
+      gap: 14px;
+    }
+
+    .field {
+      display: grid;
+      gap: 8px;
+    }
+
+    .field label {
+      font-weight: 600;
+      font-size: 14px;
+    }
+
+    .hint {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.4;
+    }
+
+    input[type="file"],
+    input[type="range"],
+    button {
+      width: 100%;
+    }
+
+    input[type="file"] {
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #fbfcfd;
+    }
+
+    .range-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      align-items: center;
+    }
+
+    input[type="range"] {
+      accent-color: var(--accent);
+    }
+
+    .small-pill {
+      padding: 5px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: #f8fafc;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      min-width: 56px;
+      text-align: center;
+    }
+
+    .checkbox {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 14px;
+      font-weight: 500;
+    }
+
+    .actions {
+      display: flex;
+      gap: 10px;
+    }
+
+    button {
+      appearance: none;
+      border: 0;
+      border-radius: 12px;
+      padding: 12px 14px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .primary {
+      background: var(--accent);
+      color: white;
+    }
+
+    .secondary {
+      background: #eef4ff;
+      color: #1d4fd7;
+    }
+
+    .results {
+      display: grid;
+      gap: 12px;
+      margin-top: 14px;
+    }
+
+    .metric {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px;
+      background: #fbfcfd;
+    }
+
+    .metric-title {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin-bottom: 6px;
+    }
+
+    .metric-value {
+      font-size: 22px;
+      font-weight: 800;
+      line-height: 1.15;
+    }
+
+    .metric-sub {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.35;
+      word-break: break-word;
+    }
+
+    .canvas-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .canvas-card {
+      display: grid;
+      gap: 10px;
+    }
+
+    .canvas-card h2 {
+      margin: 0;
+      font-size: 17px;
+    }
+
+    .canvas-wrap {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      overflow: hidden;
+      background: #f7f9fb;
+      min-height: 240px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+
+    .status {
+      margin-top: 12px;
+      padding: 12px 14px;
+      border-radius: 12px;
+      font-size: 14px;
+      font-weight: 600;
+      background: #eef4ff;
+      color: #214c9f;
+    }
+
+    .status.ok {
+      background: #e7f8f0;
+      color: #0d704b;
+    }
+
+    .status.error {
+      background: #fdecec;
+      color: #9e2f2f;
+    }
+
+    pre {
+      margin: 0;
+      padding: 12px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: #0f172a;
+      color: #e2e8f0;
+      overflow: auto;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    @media (max-width: 1040px) {
+      .grid {
+        grid-template-columns: 1fr;
+      }
+
+      .canvas-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <h1>Vision Marker Test</h1>
+    <p class="lead">
+      Загрузи исходную картинку и картинку, на которой DeepSeek или другой vision-сервис обвел стрелку красным.
+      Страница найдет красную разметку локально, посчитает ее центр и, если размеры файлов разные, пересчитает координаты
+      обратно в систему координат исходного изображения.
+    </p>
+
+    <div class="grid">
+      <section class="panel controls">
+        <div class="field">
+          <label for="originalFile">1. Исходное изображение</label>
+          <input id="originalFile" type="file" accept="image/*" />
+          <div class="hint">Это файл, в координатах которого потом нужен клик.</div>
+        </div>
+
+        <div class="field">
+          <label for="annotatedFile">2. Картинка с красной обводкой</label>
+          <input id="annotatedFile" type="file" accept="image/*" />
+          <div class="hint">Можно загрузить ответ vision-модели, где стрелка или кнопка уже обведена красным.</div>
+        </div>
+
+        <div class="field">
+          <label class="checkbox">
+            <input id="grayscaleToggle" type="checkbox" />
+            Показать исходник в Ч/Б
+          </label>
+          <div class="range-row">
+            <input id="thresholdRange" type="range" min="0" max="255" value="145" />
+            <span id="thresholdValue" class="small-pill">145</span>
+          </div>
+          <div class="hint">Это только для визуальной проверки. На поиск красной рамки влияет картинка с разметкой, а не Ч/Б исходника.</div>
+        </div>
+
+        <div class="field">
+          <label>3. Порог для красной разметки</label>
+          <div class="range-row">
+            <input id="redThresholdRange" type="range" min="80" max="255" value="170" />
+            <span id="redThresholdValue" class="small-pill">170</span>
+          </div>
+          <div class="hint">Если DeepSeek рисует рамку бледно, можно снизить порог. Если ловит лишнее, повысить.</div>
+        </div>
+
+        <div class="actions">
+          <button id="detectButton" class="primary">Найти красную разметку</button>
+          <button id="copyJsonButton" class="secondary">Скопировать JSON</button>
+        </div>
+
+        <div id="status" class="status">Загрузи оба изображения, потом нажми «Найти красную разметку».</div>
+
+        <div class="results">
+          <div class="metric">
+            <div class="metric-title">Центр в разметке</div>
+            <div id="annotatedCenterValue" class="metric-value">—</div>
+            <div id="annotatedCenterSub" class="metric-sub">Координаты центра в пикселях картинки с обводкой.</div>
+          </div>
+
+          <div class="metric">
+            <div class="metric-title">Центр в исходнике</div>
+            <div id="originalCenterValue" class="metric-value">—</div>
+            <div id="originalCenterSub" class="metric-sub">Если размеры совпадают, координаты будут такими же. Если нет — будет пересчет по долям.</div>
+          </div>
+
+          <div class="metric">
+            <div class="metric-title">Нормализованные координаты</div>
+            <div id="normalizedValue" class="metric-value">—</div>
+            <div id="normalizedSub" class="metric-sub">Доли от ширины и высоты картинки с разметкой.</div>
+          </div>
+
+          <div class="metric">
+            <div class="metric-title">Bounding box</div>
+            <div id="bboxValue" class="metric-value">—</div>
+            <div id="bboxSub" class="metric-sub">Минимальный прямоугольник вокруг найденной красной области.</div>
+          </div>
+        </div>
+
+        <pre id="jsonOutput">{
+  "status": "waiting"
+}</pre>
+      </section>
+
+      <section class="panel">
+        <div class="canvas-grid">
+          <div class="canvas-card">
+            <h2>Исходник</h2>
+            <div class="canvas-wrap">
+              <canvas id="originalCanvas"></canvas>
+            </div>
+          </div>
+
+          <div class="canvas-card">
+            <h2>Исходник в Ч/Б</h2>
+            <div class="canvas-wrap">
+              <canvas id="processedCanvas"></canvas>
+            </div>
+          </div>
+
+          <div class="canvas-card">
+            <h2>Размеченная картинка</h2>
+            <div class="canvas-wrap">
+              <canvas id="annotatedCanvas"></canvas>
+            </div>
+          </div>
+
+          <div class="canvas-card">
+            <h2>Найденная область</h2>
+            <div class="canvas-wrap">
+              <canvas id="resultCanvas"></canvas>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    const state = {
+      originalImage: null,
+      annotatedImage: null,
+      originalBitmap: null,
+      annotatedBitmap: null,
+      lastResult: null,
+    };
+
+    const els = {
+      originalFile: document.getElementById('originalFile'),
+      annotatedFile: document.getElementById('annotatedFile'),
+      grayscaleToggle: document.getElementById('grayscaleToggle'),
+      thresholdRange: document.getElementById('thresholdRange'),
+      thresholdValue: document.getElementById('thresholdValue'),
+      redThresholdRange: document.getElementById('redThresholdRange'),
+      redThresholdValue: document.getElementById('redThresholdValue'),
+      detectButton: document.getElementById('detectButton'),
+      copyJsonButton: document.getElementById('copyJsonButton'),
+      status: document.getElementById('status'),
+      annotatedCenterValue: document.getElementById('annotatedCenterValue'),
+      annotatedCenterSub: document.getElementById('annotatedCenterSub'),
+      originalCenterValue: document.getElementById('originalCenterValue'),
+      originalCenterSub: document.getElementById('originalCenterSub'),
+      normalizedValue: document.getElementById('normalizedValue'),
+      normalizedSub: document.getElementById('normalizedSub'),
+      bboxValue: document.getElementById('bboxValue'),
+      bboxSub: document.getElementById('bboxSub'),
+      jsonOutput: document.getElementById('jsonOutput'),
+      originalCanvas: document.getElementById('originalCanvas'),
+      processedCanvas: document.getElementById('processedCanvas'),
+      annotatedCanvas: document.getElementById('annotatedCanvas'),
+      resultCanvas: document.getElementById('resultCanvas'),
+    };
+
+    function setStatus(message, type = 'info') {
+      els.status.textContent = message;
+      els.status.className = `status${type === 'info' ? '' : ` ${type}`}`;
+    }
+
+    function setMetric(el, value, subEl, sub) {
+      el.textContent = value;
+      if (subEl) subEl.textContent = sub;
+    }
+
+    function drawBitmapToCanvas(canvas, bitmap) {
+      if (!bitmap) {
+        canvas.width = 0;
+        canvas.height = 0;
+        return;
+      }
+      canvas.width = bitmap.width;
+      canvas.height = bitmap.height;
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(bitmap, 0, 0);
+    }
+
+    function renderProcessedOriginal() {
+      const bitmap = state.originalBitmap;
+      if (!bitmap) {
+        drawBitmapToCanvas(els.processedCanvas, null);
+        return;
+      }
+
+      els.processedCanvas.width = bitmap.width;
+      els.processedCanvas.height = bitmap.height;
+      const ctx = els.processedCanvas.getContext('2d');
+      ctx.clearRect(0, 0, bitmap.width, bitmap.height);
+      ctx.drawImage(bitmap, 0, 0);
+
+      if (!els.grayscaleToggle.checked) {
+        return;
+      }
+
+      const imageData = ctx.getImageData(0, 0, bitmap.width, bitmap.height);
+      const data = imageData.data;
+      const threshold = Number(els.thresholdRange.value);
+
+      for (let i = 0; i < data.length; i += 4) {
+        const gray = Math.round((data[i] * 0.299) + (data[i + 1] * 0.587) + (data[i + 2] * 0.114));
+        const value = gray >= threshold ? 255 : 0;
+        data[i] = value;
+        data[i + 1] = value;
+        data[i + 2] = value;
+      }
+
+      ctx.putImageData(imageData, 0, 0);
+    }
+
+    function loadImageFromFile(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const img = new Image();
+          img.onload = () => resolve(img);
+          img.onerror = reject;
+          img.src = reader.result;
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    }
+
+    async function handleFileInput(file, keyPrefix) {
+      if (!file) return;
+      const image = await loadImageFromFile(file);
+      const bitmap = await createImageBitmap(image);
+      state[`${keyPrefix}Image`] = image;
+      state[`${keyPrefix}Bitmap`] = bitmap;
+      if (keyPrefix === 'original') {
+        drawBitmapToCanvas(els.originalCanvas, bitmap);
+        renderProcessedOriginal();
+      } else {
+        drawBitmapToCanvas(els.annotatedCanvas, bitmap);
+        drawBitmapToCanvas(els.resultCanvas, bitmap);
+      }
+    }
+
+    function isRedPixel(r, g, b, threshold) {
+      return r >= threshold && g <= threshold - 50 && b <= threshold - 50 && r > g * 1.35 && r > b * 1.35;
+    }
+
+    function findLargestRedRegion(imageData, width, height, threshold) {
+      const data = imageData.data;
+      const visited = new Uint8Array(width * height);
+      let best = null;
+
+      const stack = [];
+      const push = (x, y) => {
+        stack.push(x, y);
+      };
+
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          const index = y * width + x;
+          if (visited[index]) continue;
+
+          const offset = index * 4;
+          const r = data[offset];
+          const g = data[offset + 1];
+          const b = data[offset + 2];
+          if (!isRedPixel(r, g, b, threshold)) {
+            visited[index] = 1;
+            continue;
+          }
+
+          visited[index] = 1;
+          stack.length = 0;
+          push(x, y);
+
+          let minX = x;
+          let minY = y;
+          let maxX = x;
+          let maxY = y;
+          let count = 0;
+          let sumX = 0;
+          let sumY = 0;
+
+          while (stack.length) {
+            const cy = stack.pop();
+            const cx = stack.pop();
+            count += 1;
+            sumX += cx;
+            sumY += cy;
+            if (cx < minX) minX = cx;
+            if (cy < minY) minY = cy;
+            if (cx > maxX) maxX = cx;
+            if (cy > maxY) maxY = cy;
+
+            const neighbors = [
+              [cx - 1, cy],
+              [cx + 1, cy],
+              [cx, cy - 1],
+              [cx, cy + 1],
+            ];
+
+            for (const [nx, ny] of neighbors) {
+              if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+              const nIndex = ny * width + nx;
+              if (visited[nIndex]) continue;
+              visited[nIndex] = 1;
+              const nOffset = nIndex * 4;
+              if (isRedPixel(data[nOffset], data[nOffset + 1], data[nOffset + 2], threshold)) {
+                push(nx, ny);
+              }
+            }
+          }
+
+          const component = {
+            count,
+            minX,
+            minY,
+            maxX,
+            maxY,
+            centerX: sumX / count,
+            centerY: sumY / count,
+            width: maxX - minX + 1,
+            height: maxY - minY + 1,
+          };
+
+          if (!best || component.count > best.count) {
+            best = component;
+          }
+        }
+      }
+
+      return best;
+    }
+
+    function drawDetectionResult(result) {
+      const bitmap = state.annotatedBitmap;
+      drawBitmapToCanvas(els.resultCanvas, bitmap);
+      if (!bitmap || !result) return;
+
+      const ctx = els.resultCanvas.getContext('2d');
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = '#00b36a';
+      ctx.fillStyle = 'rgba(0, 179, 106, 0.15)';
+      ctx.beginPath();
+      ctx.rect(result.minX, result.minY, result.width, result.height);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.strokeStyle = '#0057d8';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(result.centerX, result.centerY, 16, 0, Math.PI * 2);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(result.centerX - 20, result.centerY);
+      ctx.lineTo(result.centerX + 20, result.centerY);
+      ctx.moveTo(result.centerX, result.centerY - 20);
+      ctx.lineTo(result.centerX, result.centerY + 20);
+      ctx.stroke();
+    }
+
+    function updateResultUI(result) {
+      if (!result) {
+        setMetric(els.annotatedCenterValue, '—', els.annotatedCenterSub, 'Красная область пока не найдена.');
+        setMetric(els.originalCenterValue, '—', els.originalCenterSub, 'Пересчет появится после успешного поиска.');
+        setMetric(els.normalizedValue, '—', els.normalizedSub, 'Здесь будут доли от ширины и высоты.');
+        setMetric(els.bboxValue, '—', els.bboxSub, 'Здесь будет bounding box красной области.');
+        els.jsonOutput.textContent = JSON.stringify({ status: 'waiting' }, null, 2);
+        return;
+      }
+
+      const normalizedX = result.centerX / state.annotatedBitmap.width;
+      const normalizedY = result.centerY / state.annotatedBitmap.height;
+
+      let mappedCenter = null;
+      if (state.originalBitmap) {
+        mappedCenter = {
+          x: normalizedX * state.originalBitmap.width,
+          y: normalizedY * state.originalBitmap.height,
+        };
+      }
+
+      const payload = {
+        annotated_image: {
+          width: state.annotatedBitmap.width,
+          height: state.annotatedBitmap.height,
+        },
+        original_image: state.originalBitmap ? {
+          width: state.originalBitmap.width,
+          height: state.originalBitmap.height,
+        } : null,
+        red_region: {
+          top_left_x: result.minX,
+          top_left_y: result.minY,
+          bottom_right_x: result.maxX,
+          bottom_right_y: result.maxY,
+          pixel_count: result.count,
+        },
+        annotated_center: {
+          x: Number(result.centerX.toFixed(2)),
+          y: Number(result.centerY.toFixed(2)),
+        },
+        normalized_center: {
+          x_pct: Number(normalizedX.toFixed(6)),
+          y_pct: Number(normalizedY.toFixed(6)),
+        },
+        mapped_center_in_original: mappedCenter ? {
+          x: Number(mappedCenter.x.toFixed(2)),
+          y: Number(mappedCenter.y.toFixed(2)),
+        } : null,
+      };
+
+      state.lastResult = payload;
+
+      setMetric(
+        els.annotatedCenterValue,
+        `${payload.annotated_center.x}, ${payload.annotated_center.y}`,
+        els.annotatedCenterSub,
+        `Размер картинки с разметкой: ${state.annotatedBitmap.width}×${state.annotatedBitmap.height}`,
+      );
+
+      setMetric(
+        els.originalCenterValue,
+        mappedCenter ? `${payload.mapped_center_in_original.x}, ${payload.mapped_center_in_original.y}` : 'Нет исходника',
+        els.originalCenterSub,
+        mappedCenter
+          ? `Размер исходника: ${state.originalBitmap.width}×${state.originalBitmap.height}`
+          : 'Загрузи исходник, чтобы пересчитать центр обратно в его координаты.',
+      );
+
+      setMetric(
+        els.normalizedValue,
+        `${payload.normalized_center.x_pct}, ${payload.normalized_center.y_pct}`,
+        els.normalizedSub,
+        'Эти доли полезны, если сервис внутри меняет размер картинки.',
+      );
+
+      setMetric(
+        els.bboxValue,
+        `${result.minX},${result.minY} → ${result.maxX},${result.maxY}`,
+        els.bboxSub,
+        `Пикселей в компоненте: ${result.count}`,
+      );
+
+      els.jsonOutput.textContent = JSON.stringify(payload, null, 2);
+    }
+
+    async function runDetection() {
+      if (!state.annotatedBitmap) {
+        setStatus('Сначала загрузи картинку с красной обводкой.', 'error');
+        return;
+      }
+
+      drawBitmapToCanvas(els.resultCanvas, state.annotatedBitmap);
+      const ctx = els.resultCanvas.getContext('2d');
+      const imageData = ctx.getImageData(0, 0, state.annotatedBitmap.width, state.annotatedBitmap.height);
+      const threshold = Number(els.redThresholdRange.value);
+      const result = findLargestRedRegion(imageData, state.annotatedBitmap.width, state.annotatedBitmap.height, threshold);
+
+      if (!result || result.count < 20) {
+        updateResultUI(null);
+        setStatus('Красная разметка не найдена. Попробуй снизить порог или выбрать другую картинку.', 'error');
+        return;
+      }
+
+      drawDetectionResult(result);
+      updateResultUI(result);
+      setStatus('Красная область найдена. Центр и пересчет обновлены.', 'ok');
+    }
+
+    function bindEvents() {
+      els.originalFile.addEventListener('change', async (event) => {
+        try {
+          const file = event.target.files[0];
+          if (!file) return;
+          await handleFileInput(file, 'original');
+          updateResultUI(state.lastResult ? {
+            ...state.lastResult.red_region,
+            minX: state.lastResult.red_region.top_left_x,
+            minY: state.lastResult.red_region.top_left_y,
+            maxX: state.lastResult.red_region.bottom_right_x,
+            maxY: state.lastResult.red_region.bottom_right_y,
+            width: state.lastResult.red_region.bottom_right_x - state.lastResult.red_region.top_left_x + 1,
+            height: state.lastResult.red_region.bottom_right_y - state.lastResult.red_region.top_left_y + 1,
+            centerX: state.lastResult.annotated_center.x,
+            centerY: state.lastResult.annotated_center.y,
+            count: state.lastResult.red_region.pixel_count,
+          } : null);
+          setStatus('Исходное изображение загружено.', 'info');
+        } catch (error) {
+          setStatus(`Не удалось загрузить исходник: ${error.message}`, 'error');
+        }
+      });
+
+      els.annotatedFile.addEventListener('change', async (event) => {
+        try {
+          const file = event.target.files[0];
+          if (!file) return;
+          await handleFileInput(file, 'annotated');
+          updateResultUI(null);
+          setStatus('Картинка с разметкой загружена.', 'info');
+        } catch (error) {
+          setStatus(`Не удалось загрузить картинку с разметкой: ${error.message}`, 'error');
+        }
+      });
+
+      els.grayscaleToggle.addEventListener('change', renderProcessedOriginal);
+      els.thresholdRange.addEventListener('input', () => {
+        els.thresholdValue.textContent = els.thresholdRange.value;
+        renderProcessedOriginal();
+      });
+      els.redThresholdRange.addEventListener('input', () => {
+        els.redThresholdValue.textContent = els.redThresholdRange.value;
+      });
+
+      els.detectButton.addEventListener('click', runDetection);
+      els.copyJsonButton.addEventListener('click', async () => {
+        const text = els.jsonOutput.textContent;
+        try {
+          await navigator.clipboard.writeText(text);
+          setStatus('JSON скопирован в буфер обмена.', 'ok');
+        } catch (error) {
+          setStatus('Не удалось скопировать JSON. Возможно, страницу нужно открыть в браузере с доступом к clipboard.', 'error');
+        }
+      });
+    }
+
+    bindEvents();
+    updateResultUI(null);
+  </script>
+</body>
+</html>

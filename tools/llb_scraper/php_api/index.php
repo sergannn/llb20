@@ -2094,17 +2094,62 @@ try {
         $params = [];
         $playerQuery = trim((string)($_GET['q'] ?? $_GET['query'] ?? ''));
         if ($playerQuery !== '') {
-            $where[] = '(p.name LIKE :q OR p.city LIKE :q OR p.country LIKE :q OR p.id = :q_id)';
+            $where[] = '(p.name LIKE :q OR p.id = :q_id)';
             $params[':q'] = '%' . $playerQuery . '%';
             $params[':q_id'] = ctype_digit($playerQuery) ? (int)$playerQuery : 0;
         }
+        $city = trim((string)($_GET['city'] ?? ''));
+        if ($city !== '') {
+            $where[] = 'p.city = :city';
+            $params[':city'] = $city;
+        }
+        $ratingNeedles = [
+            'russian_billiards' => [
+                'rating_key' => ['%pyramid%', '%russian%'],
+                'text' => ['%пирамид%', '%русск%'],
+            ],
+            'pool' => [
+                'rating_key' => ['%pool%'],
+                'text' => ['%пул%', '%pool%'],
+            ],
+            'snooker' => [
+                'rating_key' => ['%snooker%'],
+                'text' => ['%снукер%', '%snooker%'],
+            ],
+        ];
+        $discipline = trim((string)($_GET['discipline'] ?? ''));
+        $disciplineSql = '';
+        if (isset($ratingNeedles[$discipline])) {
+            $parts = [];
+            foreach ($ratingNeedles[$discipline]['rating_key'] as $i => $needle) {
+                $key = ':discipline_key_' . $i;
+                $parts[] = 'fr.rating_key LIKE ' . $key;
+                $params[$key] = $needle;
+            }
+            foreach ($ratingNeedles[$discipline]['text'] as $i => $needle) {
+                $key = ':discipline_text_' . $i;
+                $parts[] = 'fr.discipline LIKE ' . $key . ' OR fr.rating_label LIKE ' . $key;
+                $params[$key] = $needle;
+            }
+            $disciplineSql = '(' . implode(' OR ', $parts) . ')';
+            $where[] = 'EXISTS (SELECT 1 FROM player_ratings fr WHERE fr.player_id = p.id AND ' . $disciplineSql . ')';
+        }
+        $rbEloSql = "MAX(CASE WHEN r.rating_key LIKE '%pyramid%' OR r.rating_key LIKE '%russian%' OR r.discipline LIKE '%пирамид%' OR r.rating_label LIKE '%пирамид%' OR r.rating_label LIKE '%русск%' THEN r.elo END)";
+        $poolEloSql = "MAX(CASE WHEN r.rating_key LIKE '%pool%' OR r.discipline LIKE '%пул%' OR r.discipline LIKE '%pool%' OR r.rating_label LIKE '%пул%' OR r.rating_label LIKE '%pool%' THEN r.elo END)";
+        $snookerEloSql = "MAX(CASE WHEN r.rating_key LIKE '%snooker%' OR r.discipline LIKE '%снукер%' OR r.discipline LIKE '%snooker%' OR r.rating_label LIKE '%снукер%' OR r.rating_label LIKE '%snooker%' THEN r.elo END)";
+        $statsTextSql = "JSON_UNQUOTE(JSON_EXTRACT(p.detail_json, '$.\"_sections\".\"Статистика\"'))";
+        $tournamentsCountSql = "CAST(REGEXP_REPLACE(REGEXP_SUBSTR($statsTextSql, 'Турниров[[:space:]]*:[[:space:]]*[0-9]+'), '[^0-9]', '') AS UNSIGNED)";
         if (!empty($_GET['rating_key'])) {
             $where[] = 'r.rating_key = :rating_key';
             $params[':rating_key'] = $_GET['rating_key'];
         }
         $sql = 'SELECT p.id, p.name, p.city, p.country, p.avatar_url, p.elo, p.detail_fetched_at,
                        p.contacts_raw, p.phone, p.email, p.telegram, p.whatsapp,
+                       ' . $rbEloSql . ' AS rb_elo,
+                       ' . $poolEloSql . ' AS pool_elo,
+                       ' . $snookerEloSql . ' AS snooker_elo,
                        MAX(r.elo) AS best_elo,
+                       COALESCE(' . $tournamentsCountSql . ', 0) AS tournaments_count,
                        GROUP_CONCAT(DISTINCT r.rating_key ORDER BY r.rating_key SEPARATOR \',\') AS rating_keys,
                        GROUP_CONCAT(
                          DISTINCT CONCAT_WS(\'::\', r.rating_key, COALESCE(r.elo, \'\'), r.discipline, r.rating_label, r.comps_year, r.comps_total)
@@ -2115,7 +2160,31 @@ try {
         if ($where) {
             $sql .= ' WHERE ' . implode(' AND ', $where);
         }
-        $sql .= ' GROUP BY p.id ORDER BY COALESCE(MAX(r.elo), p.elo, 0) DESC, p.name LIMIT :limit OFFSET :offset';
+        $sort = trim((string)($_GET['sort'] ?? 'best_elo'));
+        $direction = strtolower(trim((string)($_GET['direction'] ?? 'desc'))) === 'asc' ? 'ASC' : 'DESC';
+        $having = [];
+        $orderSql = match ($sort) {
+            'surname', 'name' => 'p.name ' . $direction,
+            'rb_elo', 'russian_billiards' => 'rb_elo ' . $direction . ', p.name ASC',
+            'pool_elo', 'pool' => 'pool_elo ' . $direction . ', p.name ASC',
+            'snooker_elo', 'snooker' => 'snooker_elo ' . $direction . ', p.name ASC',
+            'tournaments', 'tournaments_count' => 'tournaments_count ' . $direction . ', p.name ASC',
+            default => 'COALESCE(best_elo, p.elo, 0) ' . $direction . ', p.name ASC',
+        };
+        if (in_array($sort, ['rb_elo', 'russian_billiards'], true)) {
+            $having[] = 'rb_elo IS NOT NULL';
+        } elseif (in_array($sort, ['pool_elo', 'pool'], true)) {
+            $having[] = 'pool_elo IS NOT NULL';
+        } elseif (in_array($sort, ['snooker_elo', 'snooker'], true)) {
+            $having[] = 'snooker_elo IS NOT NULL';
+        } elseif (in_array($sort, ['tournaments', 'tournaments_count'], true)) {
+            $having[] = 'tournaments_count > 0';
+        }
+        $sql .= ' GROUP BY p.id';
+        if ($having) {
+            $sql .= ' HAVING ' . implode(' AND ', $having);
+        }
+        $sql .= ' ORDER BY ' . $orderSql . ' LIMIT :limit OFFSET :offset';
         $stmt = $pdo->prepare($sql);
         foreach ($params as $key => $value) {
             $stmt->bindValue($key, $value, $key === ':q_id' ? PDO::PARAM_INT : PDO::PARAM_STR);

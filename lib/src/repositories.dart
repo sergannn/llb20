@@ -57,7 +57,11 @@ abstract class LeagueRepository {
   Future<List<Player>> searchPlayers(
     String query, {
     required DisciplineFilter discipline,
+    String city = '',
+    PlayerSort sort = PlayerSort.russianBilliards,
+    bool sortAscending = false,
     int limit = 100,
+    int offset = 0,
   });
   Future<Tournament> tournamentDetails(Tournament tournament);
   void dispose();
@@ -227,29 +231,60 @@ class ApiLeagueRepository implements LeagueRepository {
   Future<List<Player>> searchPlayers(
     String query, {
     required DisciplineFilter discipline,
+    String city = '',
+    PlayerSort sort = PlayerSort.russianBilliards,
+    bool sortAscending = false,
     int limit = 100,
+    int offset = 0,
   }) async {
     final normalized = query.trim();
-    if (normalized.isEmpty) {
-      return players()
-          .where((player) => player.matchesDiscipline(discipline))
-          .toList();
-    }
     try {
       final rows = await _getList('players', {
-        'q': normalized,
+        if (normalized.isNotEmpty) 'q': normalized,
+        if (city.trim().isNotEmpty) 'city': city.trim(),
+        if (discipline != DisciplineFilter.all)
+          'discipline': discipline.storageKey,
+        'sort': _playerSortKey(sort),
+        'direction': sortAscending ? 'asc' : 'desc',
         'limit': '$limit',
+        'offset': '$offset',
       });
       return rows
           .map(_playerFromJson)
-          .where((player) => player.matchesDiscipline(discipline))
+          .where(
+            (player) =>
+                normalized.isEmpty || player.matchesNameQuery(normalized),
+          )
           .toList();
     } catch (_) {
-      return players()
+      final local = players()
           .where((player) => player.matchesDiscipline(discipline))
-          .where((player) => player.matchesQuery(normalized))
-          .take(limit)
+          .where(
+            (player) =>
+                city.trim().isEmpty ||
+                player.city.trim().toLowerCase() == city.trim().toLowerCase(),
+          )
+          .where(
+            (player) =>
+                normalized.isEmpty || player.matchesNameQuery(normalized),
+          )
           .toList();
+      local.sort((a, b) {
+        final compare = switch (sort) {
+          PlayerSort.surname => a.surnameKey.compareTo(b.surnameKey),
+          PlayerSort.russianBilliards => _eloValue(
+            a.russianBilliardsElo,
+          ).compareTo(_eloValue(b.russianBilliardsElo)),
+          PlayerSort.pool => _eloValue(
+            a.poolElo,
+          ).compareTo(_eloValue(b.poolElo)),
+          PlayerSort.tournaments => a.tournamentsCount.compareTo(
+            b.tournamentsCount,
+          ),
+        };
+        return sortAscending ? compare : -compare;
+      });
+      return local.skip(offset).take(limit).toList();
     }
   }
 
@@ -388,17 +423,20 @@ class ApiLeagueRepository implements LeagueRepository {
           'limit': '$tournamentsLimit',
         }),
         _getList('video_streams', {'limit': '100'}),
+        _getList('clubs', {'limit': '300'}),
       ]);
       final tournamentRows = [...results[1], ...results[2], ...results[3]];
       _applyRows(
         players: results[0],
         tournaments: tournamentRows,
         videoStreams: results[4],
+        clubs: results[5],
       );
       await _saveCache(
         players: results[0],
         tournaments: tournamentRows,
         videoStreams: results[4],
+        clubs: results[5],
       );
     } catch (error) {
       final restored = await _restoreCache();
@@ -510,6 +548,15 @@ class ApiLeagueRepository implements LeagueRepository {
     client.close();
   }
 
+  String _playerSortKey(PlayerSort sort) => switch (sort) {
+    PlayerSort.surname => 'surname',
+    PlayerSort.russianBilliards => 'rb_elo',
+    PlayerSort.pool => 'pool_elo',
+    PlayerSort.tournaments => 'tournaments',
+  };
+
+  int _eloValue(int? value) => value ?? -1;
+
   Future<List<Map<String, dynamic>>> _getList(
     String resource,
     Map<String, String> query,
@@ -532,6 +579,7 @@ class ApiLeagueRepository implements LeagueRepository {
     required List<Map<String, dynamic>> players,
     required List<Map<String, dynamic>> tournaments,
     required List<Map<String, dynamic>> videoStreams,
+    List<Map<String, dynamic>> clubs = const [],
   }) {
     _players = players.map(_playerFromJson).toList()
       ..sort((a, b) => b.rating.compareTo(a.rating));
@@ -539,12 +587,16 @@ class ApiLeagueRepository implements LeagueRepository {
       tournaments,
     ).map(_tournamentFromJson).toList();
     _videoStreams = videoStreams.map(_videoStreamFromJson).toList();
+    if (clubs.isNotEmpty) {
+      _clubs = clubs.map(_clubFromJson).toList();
+    }
   }
 
   Future<void> _saveCache({
     required List<Map<String, dynamic>> players,
     required List<Map<String, dynamic>> tournaments,
     required List<Map<String, dynamic>> videoStreams,
+    required List<Map<String, dynamic>> clubs,
   }) async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -555,6 +607,7 @@ class ApiLeagueRepository implements LeagueRepository {
           'players': players,
           'tournaments': tournaments,
           'video_streams': videoStreams,
+          'clubs': clubs,
         }),
       );
     } catch (_) {
@@ -574,13 +627,18 @@ class ApiLeagueRepository implements LeagueRepository {
       final players = _cachedRows(json['players']);
       final tournaments = _cachedRows(json['tournaments']);
       final videoStreams = _cachedRows(json['video_streams']);
-      if (players.isEmpty && tournaments.isEmpty && videoStreams.isEmpty) {
+      final clubs = _cachedRows(json['clubs']);
+      if (players.isEmpty &&
+          tournaments.isEmpty &&
+          videoStreams.isEmpty &&
+          clubs.isEmpty) {
         return false;
       }
       _applyRows(
         players: players,
         tournaments: tournaments,
         videoStreams: videoStreams,
+        clubs: clubs,
       );
       return true;
     } catch (_) {
@@ -619,7 +677,12 @@ class ApiLeagueRepository implements LeagueRepository {
       rating: _intValue(json['best_elo']) ?? _intValue(json['elo']) ?? 0,
       avatarUrl: _text(json['avatar_url']),
       ratings: ratings,
-      stats: _playerStatsFromJson(json['stats']),
+      stats: _playerStatsFromJson(
+        json['stats'] ??
+            (_intValue(json['tournaments_count']) == null
+                ? null
+                : {'total': _intValue(json['tournaments_count'])}),
+      ),
       tournamentEntries: _playerTournamentEntriesFromJson(
         json['tournament_entries'],
       ),
@@ -1130,7 +1193,11 @@ class EmptyLeagueRepository implements LeagueRepository {
   Future<List<Player>> searchPlayers(
     String query, {
     required DisciplineFilter discipline,
+    String city = '',
+    PlayerSort sort = PlayerSort.russianBilliards,
+    bool sortAscending = false,
     int limit = 100,
+    int offset = 0,
   }) async {
     return const [];
   }
@@ -1221,13 +1288,35 @@ class MockLeagueRepository implements LeagueRepository {
   Future<List<Player>> searchPlayers(
     String query, {
     required DisciplineFilter discipline,
+    String city = '',
+    PlayerSort sort = PlayerSort.russianBilliards,
+    bool sortAscending = false,
     int limit = 100,
+    int offset = 0,
   }) async {
-    return players()
+    final filtered = players()
         .where((player) => player.matchesDiscipline(discipline))
+        .where(
+          (player) =>
+              city.trim().isEmpty ||
+              player.city.trim().toLowerCase() == city.trim().toLowerCase(),
+        )
         .where((player) => player.matchesQuery(query))
-        .take(limit)
         .toList();
+    filtered.sort((a, b) {
+      final compare = switch (sort) {
+        PlayerSort.surname => a.surnameKey.compareTo(b.surnameKey),
+        PlayerSort.russianBilliards => (a.russianBilliardsElo ?? -1).compareTo(
+          b.russianBilliardsElo ?? -1,
+        ),
+        PlayerSort.pool => (a.poolElo ?? -1).compareTo(b.poolElo ?? -1),
+        PlayerSort.tournaments => a.tournamentsCount.compareTo(
+          b.tournamentsCount,
+        ),
+      };
+      return sortAscending ? compare : -compare;
+    });
+    return filtered.skip(offset).take(limit).toList();
   }
 
   @override

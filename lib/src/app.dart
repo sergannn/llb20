@@ -3,8 +3,10 @@ import 'dart:convert';
 
 import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
+import 'package:latlong2/latlong.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
@@ -66,6 +68,7 @@ class _LeagueHomePageState extends State<LeagueHomePage> {
   static const _initialTournamentId = String.fromEnvironment(
     'LLB_OPEN_TOURNAMENT_ID',
   );
+  static const _initialScreen = String.fromEnvironment('LLB_INITIAL_SCREEN');
   static const _initialTab = int.fromEnvironment(
     'LLB_INITIAL_TAB',
     defaultValue: 0,
@@ -91,6 +94,7 @@ class _LeagueHomePageState extends State<LeagueHomePage> {
   bool loading = true;
   bool initialDataLoaded = false;
   bool initialTournamentOpened = false;
+  bool initialScreenOpened = false;
   String? pendingTournamentLinkId;
   StreamSubscription<Uri>? linkSubscription;
   String? loadError;
@@ -255,8 +259,30 @@ class _LeagueHomePageState extends State<LeagueHomePage> {
           loading = false;
           initialDataLoaded = true;
         });
+        unawaited(openInitialScreenIfNeeded());
         unawaited(openInitialTournamentIfNeeded());
       }
+    }
+  }
+
+  Future<void> openInitialScreenIfNeeded() async {
+    if (initialScreenOpened) {
+      return;
+    }
+    initialScreenOpened = true;
+    switch (_initialScreen.trim().toLowerCase()) {
+      case 'clubs':
+        if (!mounted) {
+          return;
+        }
+        final clubs = clubSummaries();
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) =>
+                ClubsPage(clubs: clubs, initialCity: selectedCity),
+          ),
+        );
+        break;
     }
   }
 
@@ -495,6 +521,9 @@ class _LeagueHomePageState extends State<LeagueHomePage> {
       byKey[key] = ClubSummary(
         name: name,
         city: city,
+        address: club.address,
+        latitude: club.latitude,
+        longitude: club.longitude,
         tournamentsCount: club.tournamentsCount,
       );
     }
@@ -512,6 +541,9 @@ class _LeagueHomePageState extends State<LeagueHomePage> {
       byKey[key] = ClubSummary(
         name: name,
         city: city,
+        address: previous?.address ?? '',
+        latitude: previous?.latitude,
+        longitude: previous?.longitude,
         tournamentsCount: (previous?.tournamentsCount ?? 0) + 1,
       );
     }

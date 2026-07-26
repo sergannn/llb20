@@ -173,24 +173,45 @@ class _VideoPage extends StatefulWidget {
 
 class _VideoPageState extends State<_VideoPage> {
   int selectedMediaTab = 0;
+  late Future<List<({Tournament tournament, TournamentMedia media})>>
+  mediaItemsFuture = _loadMediaItems();
+
+  @override
+  void didUpdateWidget(covariant _VideoPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_tournamentsSignature(oldWidget.repository.tournaments()) !=
+        _tournamentsSignature(widget.repository.tournaments())) {
+      mediaItemsFuture = _loadMediaItems();
+    }
+  }
+
+  String _tournamentsSignature(List<Tournament> tournaments) {
+    return tournaments
+        .map(
+          (tournament) =>
+              '${tournament.id}:${tournament.media.length}:${tournament.playersCount}',
+        )
+        .join('|');
+  }
+
+  Future<List<({Tournament tournament, TournamentMedia media})>>
+  _loadMediaItems() async {
+    final nextItems = <({Tournament tournament, TournamentMedia media})>[];
+    for (final tournament in widget.repository.tournaments()) {
+      final media = tournament.media.isNotEmpty
+          ? tournament.media
+          : await widget.repository.tournamentMedia(tournament);
+      for (final item in media) {
+        nextItems.add((tournament: tournament, media: item));
+      }
+    }
+    nextItems.sort((a, b) => b.media.createdAt.compareTo(a.media.createdAt));
+    return nextItems;
+  }
 
   @override
   Widget build(BuildContext context) {
     final query = widget.search.trim().toLowerCase();
-    final mediaItems = <({Tournament tournament, TournamentMedia media})>[
-      for (final tournament in widget.repository.tournaments())
-        for (final media in tournament.media)
-          if (query.isEmpty ||
-              tournament.title.toLowerCase().contains(query) ||
-              media.title.toLowerCase().contains(query))
-            (tournament: tournament, media: media),
-    ];
-    final photos = mediaItems
-        .where((item) => item.media.kind == TournamentMediaKind.photo)
-        .toList();
-    final videos = mediaItems
-        .where((item) => item.media.kind == TournamentMediaKind.video)
-        .toList();
     final streams = widget.repository.videoStreams().where((stream) {
       if (query.isEmpty) return true;
       return stream.tournamentTitle.toLowerCase().contains(query) ||
@@ -198,62 +219,111 @@ class _VideoPageState extends State<_VideoPage> {
           stream.providerLabel.toLowerCase().contains(query);
     }).toList();
     return RefreshIndicator(
-      onRefresh: widget.onRefresh,
-      child: ListView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
-        children: [
-          Text(
-            'Медиа',
-            style: Theme.of(
-              context,
-            ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900),
+      onRefresh: () async {
+        await widget.onRefresh();
+        if (!mounted) {
+          return;
+        }
+        setState(() {
+          mediaItemsFuture = _loadMediaItems();
+        });
+      },
+      child:
+          FutureBuilder<List<({Tournament tournament, TournamentMedia media})>>(
+            future: mediaItemsFuture,
+            builder: (context, snapshot) {
+              final mediaItems = (snapshot.data ?? const [])
+                  .where(
+                    (item) =>
+                        query.isEmpty ||
+                        item.tournament.title.toLowerCase().contains(query) ||
+                        item.media.title.toLowerCase().contains(query),
+                  )
+                  .toList();
+              final photos = mediaItems
+                  .where((item) => item.media.kind == TournamentMediaKind.photo)
+                  .toList();
+              final videos = mediaItems
+                  .where((item) => item.media.kind == TournamentMediaKind.video)
+                  .toList();
+              return ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
+                children: [
+                  Text(
+                    'Медиа',
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  _SegmentedSelector(
+                    selectedIndex: selectedMediaTab,
+                    options: [
+                      _SegmentOption(
+                        icon: Icons.photo_library_outlined,
+                        label: 'Фото ${photos.length}',
+                      ),
+                      _SegmentOption(
+                        icon: Icons.video_library_outlined,
+                        label: 'Видео ${videos.length}',
+                      ),
+                      _SegmentOption(
+                        icon: Icons.sensors_outlined,
+                        label: 'Эфиры ${streams.length}',
+                      ),
+                    ],
+                    onSelected: (index) =>
+                        setState(() => selectedMediaTab = index),
+                  ),
+                  const SizedBox(height: 14),
+                  if (snapshot.connectionState != ConnectionState.done)
+                    const Padding(
+                      padding: EdgeInsets.only(bottom: 12),
+                      child: LinearProgressIndicator(minHeight: 2),
+                    ),
+                  if (snapshot.hasError)
+                    MaterialBanner(
+                      leading: const Icon(Icons.perm_media_outlined),
+                      content: Text(
+                        'Не удалось загрузить медиа: ${snapshot.error}',
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => setState(() {
+                            mediaItemsFuture = _loadMediaItems();
+                          }),
+                          child: const Text('Еще раз'),
+                        ),
+                      ],
+                    ),
+                  if (selectedMediaTab == 0)
+                    _MediaItemsList(
+                      items: photos,
+                      emptyIcon: Icons.photo_library_outlined,
+                      emptyTitle: 'Фото пока нет',
+                    )
+                  else if (selectedMediaTab == 1)
+                    _MediaItemsList(
+                      items: videos,
+                      emptyIcon: Icons.video_library_outlined,
+                      emptyTitle: 'Видео пока нет',
+                    )
+                  else if (streams.isEmpty)
+                    const _EmptyState(
+                      icon: Icons.sensors_outlined,
+                      title: 'Пока нет трансляций',
+                      text: '',
+                    )
+                  else
+                    for (final stream in streams) ...[
+                      _VideoStreamCard(stream: stream),
+                      const SizedBox(height: 9),
+                    ],
+                ],
+              );
+            },
           ),
-          const SizedBox(height: 12),
-          _SegmentedSelector(
-            selectedIndex: selectedMediaTab,
-            options: [
-              _SegmentOption(
-                icon: Icons.photo_library_outlined,
-                label: 'Фото ${photos.length}',
-              ),
-              _SegmentOption(
-                icon: Icons.video_library_outlined,
-                label: 'Видео ${videos.length}',
-              ),
-              _SegmentOption(
-                icon: Icons.sensors_outlined,
-                label: 'Эфиры ${streams.length}',
-              ),
-            ],
-            onSelected: (index) => setState(() => selectedMediaTab = index),
-          ),
-          const SizedBox(height: 14),
-          if (selectedMediaTab == 0)
-            _MediaItemsList(
-              items: photos,
-              emptyIcon: Icons.photo_library_outlined,
-              emptyTitle: 'Фото пока нет',
-            )
-          else if (selectedMediaTab == 1)
-            _MediaItemsList(
-              items: videos,
-              emptyIcon: Icons.video_library_outlined,
-              emptyTitle: 'Видео пока нет',
-            )
-          else if (streams.isEmpty)
-            const _EmptyState(
-              icon: Icons.sensors_outlined,
-              title: 'Пока нет трансляций',
-              text: '',
-            )
-          else
-            for (final stream in streams) ...[
-              _VideoStreamCard(stream: stream),
-              const SizedBox(height: 9),
-            ],
-        ],
-      ),
     );
   }
 }

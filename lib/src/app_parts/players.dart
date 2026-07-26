@@ -36,14 +36,21 @@ class _PlayersPage extends StatefulWidget {
 }
 
 class _PlayersPageState extends State<_PlayersPage> {
+  static const _pageSize = 200;
+
   Timer? searchDebounce;
-  List<Player>? searchedPlayers;
+  final ScrollController scrollController = ScrollController();
+  List<Player>? listedPlayers;
   bool searching = false;
+  bool loadingMore = false;
+  bool hasMorePlayers = true;
   String? searchError;
+  int _searchToken = 0;
 
   @override
   void initState() {
     super.initState();
+    scrollController.addListener(_onScroll);
     scheduleSearch(immediate: true);
   }
 
@@ -52,7 +59,9 @@ class _PlayersPageState extends State<_PlayersPage> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.search != widget.search ||
         oldWidget.selectedCity != widget.selectedCity ||
-        oldWidget.selectedDiscipline != widget.selectedDiscipline) {
+        oldWidget.selectedDiscipline != widget.selectedDiscipline ||
+        oldWidget.sort != widget.sort ||
+        oldWidget.sortAscending != widget.sortAscending) {
       scheduleSearch();
     }
   }
@@ -60,52 +69,75 @@ class _PlayersPageState extends State<_PlayersPage> {
   @override
   void dispose() {
     searchDebounce?.cancel();
+    scrollController.dispose();
     super.dispose();
   }
 
   void scheduleSearch({bool immediate = false}) {
     searchDebounce?.cancel();
-    final query = widget.search.trim();
-    if (query.length < 2) {
-      setState(() {
-        searchedPlayers = null;
-        searching = false;
-        searchError = null;
-      });
-      return;
-    }
     searchDebounce = Timer(
       immediate ? Duration.zero : const Duration(milliseconds: 350),
-      () => runSearch(query),
+      () => loadPlayers(widget.search.trim(), reset: true),
     );
   }
 
-  Future<void> runSearch(String query) async {
+  void _onScroll() {
+    if (!scrollController.hasClients ||
+        loadingMore ||
+        searching ||
+        !hasMorePlayers) {
+      return;
+    }
+    final position = scrollController.position;
+    if (position.pixels >= position.maxScrollExtent - 360) {
+      loadPlayers(widget.search.trim());
+    }
+  }
+
+  Future<void> loadPlayers(String query, {bool reset = false}) async {
+    final token = reset ? ++_searchToken : _searchToken;
+    final currentOffset = reset ? 0 : (listedPlayers?.length ?? 0);
     setState(() {
-      searching = true;
-      searchError = null;
+      if (reset) {
+        searching = true;
+        searchError = null;
+        hasMorePlayers = true;
+        listedPlayers = null;
+      } else {
+        loadingMore = true;
+      }
     });
     try {
       final results = await widget.repository.searchPlayers(
         query,
         discipline: widget.selectedDiscipline,
+        city: widget.selectedCity,
+        sort: widget.sort,
+        sortAscending: widget.sortAscending,
+        limit: _pageSize,
+        offset: currentOffset,
       );
-      if (!mounted || widget.search.trim() != query) {
+      if (!mounted || token != _searchToken || widget.search.trim() != query) {
         return;
       }
-      setState(
-        () => searchedPlayers = results
-            .where((player) => player.matchesNameQuery(query))
-            .where(_matchesSelectedCity)
-            .toList(),
-      );
+      setState(() {
+        if (reset) {
+          listedPlayers = results;
+        } else {
+          listedPlayers = [...?listedPlayers, ...results];
+        }
+        hasMorePlayers = results.length >= _pageSize;
+      });
     } catch (error) {
       if (mounted) {
         setState(() => searchError = '$error');
       }
     } finally {
       if (mounted) {
-        setState(() => searching = false);
+        setState(() {
+          searching = false;
+          loadingMore = false;
+        });
       }
     }
   }
@@ -113,7 +145,7 @@ class _PlayersPageState extends State<_PlayersPage> {
   @override
   Widget build(BuildContext context) {
     final players =
-        (searchedPlayers ??
+        (listedPlayers ??
                 widget.repository
                     .players()
                     .where(
@@ -121,7 +153,7 @@ class _PlayersPageState extends State<_PlayersPage> {
                           player.matchesDiscipline(widget.selectedDiscipline),
                     )
                     .where(_matchesSelectedCity)
-                    .where((player) => player.matchesQuery(widget.search)))
+                    .where((player) => player.matchesNameQuery(widget.search)))
             .toList();
     players.sort((a, b) {
       final compare = switch (widget.sort) {
@@ -140,6 +172,7 @@ class _PlayersPageState extends State<_PlayersPage> {
     return RefreshIndicator(
       onRefresh: widget.onRefresh,
       child: ListView(
+        controller: scrollController,
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.only(bottom: 24),
         children: [
@@ -183,7 +216,7 @@ class _PlayersPageState extends State<_PlayersPage> {
                     content: const Text('Не удалось выполнить поиск игроков.'),
                     actions: [
                       TextButton(
-                        onPressed: () => runSearch(widget.search.trim()),
+                        onPressed: () => loadPlayers(widget.search.trim()),
                         child: const Text('Еще раз'),
                       ),
                     ],
@@ -199,6 +232,12 @@ class _PlayersPageState extends State<_PlayersPage> {
                     repository: widget.repository,
                     player: player,
                     showMeta: true,
+                    selectedCity: widget.selectedCity,
+                  ),
+                if (loadingMore)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 16),
+                    child: Center(child: CircularProgressIndicator()),
                   ),
                 if (players.isEmpty)
                   const _EmptyState(
@@ -593,11 +632,13 @@ class _PlayerTile extends StatelessWidget {
     required this.repository,
     required this.player,
     required this.showMeta,
+    required this.selectedCity,
   });
 
   final LeagueRepository repository;
   final Player player;
   final bool showMeta;
+  final String selectedCity;
 
   @override
   Widget build(BuildContext context) {
@@ -605,8 +646,12 @@ class _PlayerTile extends StatelessWidget {
     final discipline = player.discipline.trim() == 'Заявка LLB'
         ? ''
         : player.discipline;
+    final normalizedSelectedCity = selectedCity.trim().toLowerCase();
+    final sameAsSelectedCity =
+        normalizedSelectedCity.isNotEmpty &&
+        player.city.trim().toLowerCase() == normalizedSelectedCity;
     final meta = [
-      if (player.city.isNotEmpty) player.city,
+      if (player.city.isNotEmpty && !sameAsSelectedCity) player.city,
       if (player.club.isNotEmpty) player.club,
       if (discipline.isNotEmpty) discipline,
       if (participantSummary.isNotEmpty) participantSummary,
@@ -631,45 +676,135 @@ class _PlayerTile extends StatelessWidget {
             : null,
         child: Padding(
           padding: const EdgeInsets.all(14),
-          child: Row(
-            children: [
-              _PlayerThumbnail(player: player),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      player.name,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                        height: 1.15,
-                      ),
-                    ),
-                    if (showMeta && meta.isNotEmpty) ...[
-                      const SizedBox(height: 6),
-                      Text(
-                        meta,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.onSurface.withValues(alpha: 0.68),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              const SizedBox(width: 10),
-              _PlayerMetricColumns(player: player),
-            ],
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final compact = constraints.maxWidth < 430;
+              return compact
+                  ? _CompactPlayerTileBody(
+                      player: player,
+                      meta: meta,
+                      showMeta: showMeta,
+                    )
+                  : _WidePlayerTileBody(
+                      player: player,
+                      meta: meta,
+                      showMeta: showMeta,
+                    );
+            },
           ),
         ),
       ),
+    );
+  }
+}
+
+class _WidePlayerTileBody extends StatelessWidget {
+  const _WidePlayerTileBody({
+    required this.player,
+    required this.meta,
+    required this.showMeta,
+  });
+
+  final Player player;
+  final String meta;
+  final bool showMeta;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        _PlayerThumbnail(player: player),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                player.name,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  height: 1.1,
+                ),
+              ),
+              if (showMeta && meta.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text(
+                  meta,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.68),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(width: 10),
+        _PlayerMetricColumns(player: player),
+      ],
+    );
+  }
+}
+
+class _CompactPlayerTileBody extends StatelessWidget {
+  const _CompactPlayerTileBody({
+    required this.player,
+    required this.meta,
+    required this.showMeta,
+  });
+
+  final Player player;
+  final String meta;
+  final bool showMeta;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _PlayerThumbnail(player: player),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    player.name,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      height: 1.1,
+                    ),
+                  ),
+                  if (showMeta && meta.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      meta,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.68),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        _PlayerMetricBar(player: player),
+      ],
     );
   }
 }
@@ -686,8 +821,8 @@ class _PlayerThumbnail extends StatelessWidget {
     return ClipRRect(
       borderRadius: BorderRadius.circular(8),
       child: Container(
-        width: 58,
-        height: 74,
+        width: 56,
+        height: 68,
         color: scheme.primaryContainer,
         child: player.avatarUrl.isEmpty
             ? Center(
@@ -725,7 +860,7 @@ class _PlayerMetricColumns extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 136,
+      width: 132,
       child: Row(
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
@@ -740,6 +875,106 @@ class _PlayerMetricColumns extends StatelessWidget {
   }
 }
 
+class _PlayerMetricBar extends StatelessWidget {
+  const _PlayerMetricBar({required this.player});
+
+  final Player player;
+
+  @override
+  Widget build(BuildContext context) {
+    final chips = [
+      if (player.russianBilliardsElo != null && player.russianBilliardsElo! > 0)
+        _MetricChipData(
+          label: 'РБ',
+          value: '${player.russianBilliardsElo}',
+          accent: const Color(0xff0f6f55),
+        ),
+      if (player.poolElo != null && player.poolElo! > 0)
+        _MetricChipData(
+          label: 'Пул',
+          value: '${player.poolElo}',
+          accent: const Color(0xff2f6fb0),
+        ),
+      if (player.tournamentsCount > 0)
+        _MetricChipData(
+          label: 'Турн.',
+          value: '${player.tournamentsCount}',
+          accent: const Color(0xff8b6f12),
+        ),
+    ];
+
+    if (chips.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [for (final chip in chips) _PlayerMetricChip(data: chip)],
+      ),
+    );
+  }
+}
+
+class _MetricChipData {
+  const _MetricChipData({
+    required this.label,
+    required this.value,
+    required this.accent,
+  });
+
+  final String label;
+  final String value;
+  final Color accent;
+}
+
+class _PlayerMetricChip extends StatelessWidget {
+  const _PlayerMetricChip({required this.data});
+
+  final _MetricChipData data;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      constraints: const BoxConstraints(minWidth: 74),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.38),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: scheme.outlineVariant.withValues(alpha: 0.65),
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Text(
+            data.value,
+            maxLines: 1,
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w900,
+              fontSize: 16,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            data.label,
+            maxLines: 1,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: data.accent,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _PlayerMetricCell extends StatelessWidget {
   const _PlayerMetricCell({required this.label, required this.value});
 
@@ -748,10 +983,10 @@ class _PlayerMetricCell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final text = value == null || value! <= 0 ? '-' : '$value';
+    final text = value == null || value! <= 0 ? '' : '$value';
 
     return SizedBox(
-      width: 42,
+      width: 40,
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.end,
@@ -759,14 +994,16 @@ class _PlayerMetricCell extends StatelessWidget {
           Text(
             text,
             maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(
-              context,
-            ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w900),
+            softWrap: false,
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w900,
+              fontSize: 16,
+            ),
           ),
           Text(
             label,
             maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: Theme.of(context).textTheme.labelSmall,
           ),
         ],
