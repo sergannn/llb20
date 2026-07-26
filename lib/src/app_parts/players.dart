@@ -789,46 +789,42 @@ class _CompactPlayerTileBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _PlayerThumbnail(player: player),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    player.name,
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                      height: 1.1,
-                    ),
-                  ),
-                  if (showMeta && meta.isNotEmpty) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      meta,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.onSurface.withValues(alpha: 0.68),
-                      ),
-                    ),
-                  ],
-                ],
+        _PlayerThumbnail(player: player),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                player.name,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  height: 1.1,
+                ),
               ),
-            ),
-          ],
+              if (showMeta && meta.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text(
+                  meta,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.68),
+                  ),
+                ),
+              ],
+            ],
+          ),
         ),
-        const SizedBox(height: 12),
-        _PlayerMetricBar(player: player),
+        const SizedBox(width: 8),
+        _PlayerMetricStack(player: player),
       ],
     );
   }
@@ -900,8 +896,8 @@ class _PlayerMetricColumns extends StatelessWidget {
   }
 }
 
-class _PlayerMetricBar extends StatelessWidget {
-  const _PlayerMetricBar({required this.player});
+class _PlayerMetricStack extends StatelessWidget {
+  const _PlayerMetricStack({required this.player});
 
   final Player player;
 
@@ -932,12 +928,16 @@ class _PlayerMetricBar extends StatelessWidget {
       return const SizedBox.shrink();
     }
 
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        children: [for (final chip in chips) _PlayerMetricChip(data: chip)],
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 72),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (var index = 0; index < chips.length; index++) ...[
+            _PlayerMetricChip(data: chips[index], compact: true),
+            if (index != chips.length - 1) const SizedBox(height: 4),
+          ],
+        ],
       ),
     );
   }
@@ -956,16 +956,23 @@ class _MetricChipData {
 }
 
 class _PlayerMetricChip extends StatelessWidget {
-  const _PlayerMetricChip({required this.data});
+  const _PlayerMetricChip({required this.data, this.compact = false});
 
   final _MetricChipData data;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Container(
-      constraints: const BoxConstraints(minWidth: 66, minHeight: 34),
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      constraints: BoxConstraints(
+        minWidth: compact ? 60 : 66,
+        minHeight: compact ? 28 : 34,
+      ),
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 7 : 9,
+        vertical: compact ? 3 : 5,
+      ),
       decoration: BoxDecoration(
         color: data.accent.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(7),
@@ -983,15 +990,16 @@ class _PlayerMetricChip extends StatelessWidget {
             style: Theme.of(context).textTheme.labelSmall?.copyWith(
               color: data.accent,
               fontWeight: FontWeight.w800,
+              fontSize: compact ? 10 : null,
             ),
           ),
-          const SizedBox(width: 5),
+          SizedBox(width: compact ? 4 : 5),
           Text(
             data.value,
             maxLines: 1,
             style: Theme.of(context).textTheme.labelLarge?.copyWith(
               fontWeight: FontWeight.w900,
-              fontSize: 14,
+              fontSize: compact ? 12 : 14,
             ),
           ),
         ],
