@@ -466,6 +466,7 @@ class _SettingsDrawer extends StatelessWidget {
                         Navigator.of(context).push(
                           MaterialPageRoute(
                             builder: (_) => ClubsPage(
+                              repository: repository,
                               clubs: clubs,
                               initialCity: selectedCity,
                               mapProvider: selectedClubMapProvider,

@@ -5,17 +5,35 @@ class ClubSummary {
     required this.name,
     required this.city,
     required this.tournamentsCount,
+    this.id = '',
+    this.llbId = '',
     this.address = '',
+    this.phone = '',
+    this.website = '',
+    this.imageUrl = '',
     this.latitude,
     this.longitude,
+    this.tablesPyramid,
+    this.tablesPool,
+    this.tablesSnooker,
+    this.tablesTotal,
   });
 
+  final String id;
+  final String llbId;
   final String name;
   final String city;
   final int tournamentsCount;
   final String address;
+  final String phone;
+  final String website;
+  final String imageUrl;
   final double? latitude;
   final double? longitude;
+  final int? tablesPyramid;
+  final int? tablesPool;
+  final int? tablesSnooker;
+  final int? tablesTotal;
 
   String get searchText => '$name $city $address'.toLowerCase();
   String get mapQuery =>
@@ -46,11 +64,13 @@ enum ClubMapProvider {
 class ClubsPage extends StatefulWidget {
   const ClubsPage({
     super.key,
+    required this.repository,
     required this.clubs,
     required this.initialCity,
     required this.mapProvider,
   });
 
+  final LeagueRepository repository;
   final List<ClubSummary> clubs;
   final String initialCity;
   final ClubMapProvider mapProvider;
@@ -148,6 +168,16 @@ class _ClubsPageState extends State<ClubsPage> {
     );
   }
 
+  void _openClub(ClubSummary club) {
+    setState(() => selectedClub = club);
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) =>
+            ClubDetailsPage(repository: widget.repository, club: club),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final clubs = visibleClubs;
@@ -169,9 +199,9 @@ class _ClubsPageState extends State<ClubsPage> {
                     clubs: clubs,
                     selectedClub: selectedClub,
                     mapProvider: widget.mapProvider,
-                    onClubSelected: (club) {
-                      setState(() => selectedClub = club);
-                    },
+                    onClubSelected: (club) =>
+                        setState(() => selectedClub = club),
+                    onOpenClub: _openClub,
                   ),
                 ),
                 Positioned(
@@ -357,7 +387,7 @@ class _ClubsPageState extends State<ClubsPage> {
                             '${club.city} · турниров: ${club.tournamentsCount}',
                           ),
                           trailing: selected ? const Icon(Icons.map) : null,
-                          onTap: () => setState(() => selectedClub = club),
+                          onTap: () => _openClub(club),
                         ),
                       );
                     },
@@ -369,18 +399,448 @@ class _ClubsPageState extends State<ClubsPage> {
   }
 }
 
+class ClubDetailsPage extends StatelessWidget {
+  const ClubDetailsPage({
+    super.key,
+    required this.repository,
+    required this.club,
+  });
+
+  final LeagueRepository repository;
+  final ClubSummary club;
+
+  List<Tournament> get clubTournaments {
+    final city = club.city.toLowerCase();
+    final name = club.name.toLowerCase();
+    final tournaments = repository.tournaments().where((tournament) {
+      return tournament.city.toLowerCase() == city &&
+          tournament.club.toLowerCase() == name;
+    }).toList();
+    tournaments.sort((a, b) {
+      final aDate = a.startsAt;
+      final bDate = b.startsAt;
+      if (aDate != null && bDate != null) {
+        return bDate.compareTo(aDate);
+      }
+      return a.title.toLowerCase().compareTo(b.title.toLowerCase());
+    });
+    return tournaments;
+  }
+
+  List<({Tournament tournament, TournamentMedia media})> get clubMedia {
+    return [
+      for (final tournament in clubTournaments)
+        for (final media in tournament.media)
+          (tournament: tournament, media: media),
+    ];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final tournaments = clubTournaments;
+    final media = clubMedia;
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Клуб')),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+        children: [
+          DecoratedBox(
+            decoration: BoxDecoration(
+              color: scheme.primaryContainer,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _ClubHeroImage(club: club),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              club.name,
+                              style: Theme.of(context).textTheme.headlineSmall
+                                  ?.copyWith(fontWeight: FontWeight.w900),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              club.city,
+                              style: Theme.of(context).textTheme.titleMedium
+                                  ?.copyWith(color: scheme.onSurfaceVariant),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _ClubFactChip(
+                        icon: Icons.emoji_events_outlined,
+                        label: '${club.tournamentsCount} турниров',
+                      ),
+                      if (club.tablesTotal != null)
+                        _ClubFactChip(
+                          icon: Icons.table_bar_outlined,
+                          label: '${club.tablesTotal} столов',
+                        ),
+                      if (club.tablesPyramid != null)
+                        _ClubFactChip(
+                          icon: Icons.waves_outlined,
+                          label: 'Пирамида ${club.tablesPyramid}',
+                        ),
+                      if (club.tablesPool != null)
+                        _ClubFactChip(
+                          icon: Icons.sports_baseball_outlined,
+                          label: 'Пул ${club.tablesPool}',
+                        ),
+                      if (club.tablesSnooker != null)
+                        _ClubFactChip(
+                          icon: Icons.sports_golf_outlined,
+                          label: 'Снукер ${club.tablesSnooker}',
+                        ),
+                      if (club.latitude != null && club.longitude != null)
+                        _ClubFactChip(
+                          icon: Icons.location_on_outlined,
+                          label:
+                              '${club.latitude!.toStringAsFixed(5)}, '
+                              '${club.longitude!.toStringAsFixed(5)}',
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 14),
+          _ClubInfoCard(club: club),
+          const SizedBox(height: 22),
+          Text(
+            'Фото и видео',
+            style: Theme.of(
+              context,
+            ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 10),
+          if (media.isEmpty)
+            const _EmptyState(
+              icon: Icons.photo_library_outlined,
+              title: 'Материалов пока нет',
+              text: 'Фото и видео появятся после загрузки в турнирах клуба.',
+            )
+          else
+            SizedBox(
+              height: 150,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: media.length,
+                separatorBuilder: (_, _) => const SizedBox(width: 10),
+                itemBuilder: (context, index) {
+                  final item = media[index];
+                  return SizedBox(
+                    width: 190,
+                    child: _ClubMediaTile(item: item),
+                  );
+                },
+              ),
+            ),
+          const SizedBox(height: 22),
+          Text(
+            'Турниры',
+            style: Theme.of(
+              context,
+            ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 10),
+          if (tournaments.isEmpty)
+            const _EmptyState(
+              icon: Icons.emoji_events_outlined,
+              title: 'Турниров пока нет',
+              text: 'Когда клуб появится в турнирах, они будут здесь.',
+            )
+          else
+            for (final tournament in tournaments) ...[
+              _TournamentCard(repository: repository, tournament: tournament),
+              const SizedBox(height: 10),
+            ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ClubHeroImage extends StatelessWidget {
+  const _ClubHeroImage({required this.club});
+
+  final ClubSummary club;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: SizedBox(
+        width: 72,
+        height: 72,
+        child: club.imageUrl.isEmpty
+            ? ColoredBox(
+                color: scheme.primary,
+                child: Icon(
+                  Icons.storefront,
+                  color: scheme.onPrimary,
+                  size: 34,
+                ),
+              )
+            : Image.network(
+                club.imageUrl,
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) => ColoredBox(
+                  color: scheme.primary,
+                  child: Icon(
+                    Icons.storefront,
+                    color: scheme.onPrimary,
+                    size: 34,
+                  ),
+                ),
+              ),
+      ),
+    );
+  }
+}
+
+class _ClubInfoCard extends StatelessWidget {
+  const _ClubInfoCard({required this.club});
+
+  final ClubSummary club;
+
+  @override
+  Widget build(BuildContext context) {
+    final rows = [
+      (icon: Icons.location_city_outlined, label: 'Город', value: club.city),
+      if (club.address.isNotEmpty)
+        (icon: Icons.place_outlined, label: 'Адрес', value: club.address),
+      if (club.phone.isNotEmpty)
+        (icon: Icons.phone_outlined, label: 'Телефон', value: club.phone),
+      if (club.website.isNotEmpty)
+        (icon: Icons.language_outlined, label: 'Сайт', value: club.website),
+    ];
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            for (var i = 0; i < rows.length; i++) ...[
+              _ClubInfoRow(row: rows[i]),
+              if (i != rows.length - 1) const Divider(height: 20),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ClubInfoRow extends StatelessWidget {
+  const _ClubInfoRow({required this.row});
+
+  final ({IconData icon, String label, String value}) row;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(row.icon, color: scheme.primary),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                row.label,
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                row.value,
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w700),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ClubFactChip extends StatelessWidget {
+  const _ClubFactChip({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: scheme.surface.withValues(alpha: 0.72),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 17, color: scheme.primary),
+            const SizedBox(width: 6),
+            Text(label, style: const TextStyle(fontWeight: FontWeight.w800)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ClubMediaTile extends StatelessWidget {
+  const _ClubMediaTile({required this.item});
+
+  final ({Tournament tournament, TournamentMedia media}) item;
+
+  @override
+  Widget build(BuildContext context) {
+    final media = item.media;
+    final scheme = Theme.of(context).colorScheme;
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () {
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => _ClubMediaViewer(media: media)),
+          );
+        },
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            if (media.kind == TournamentMediaKind.photo && media.url.isNotEmpty)
+              Image.network(
+                media.url,
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) => _ClubMediaFallback(media: media),
+              )
+            else
+              _ClubMediaFallback(media: media),
+            Positioned(
+              left: 8,
+              right: 8,
+              bottom: 8,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: scheme.surface.withValues(alpha: 0.9),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: Text(
+                    item.tournament.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ClubMediaFallback extends StatelessWidget {
+  const _ClubMediaFallback({required this.media});
+
+  final TournamentMedia media;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return ColoredBox(
+      color: scheme.surfaceContainerHighest,
+      child: Center(
+        child: Icon(
+          media.isVideo ? Icons.play_circle_outline : Icons.image_outlined,
+          size: 42,
+          color: scheme.primary,
+        ),
+      ),
+    );
+  }
+}
+
+class _ClubMediaViewer extends StatelessWidget {
+  const _ClubMediaViewer({required this.media});
+
+  final TournamentMedia media;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(media.kind.label)),
+      body: media.isVideo
+          ? WebViewWidget(
+              controller: WebViewController()
+                ..setJavaScriptMode(JavaScriptMode.unrestricted)
+                ..loadRequest(Uri.parse(media.url)),
+            )
+          : InteractiveViewer(
+              minScale: 1,
+              maxScale: 4,
+              child: Center(
+                child: Image.network(
+                  media.url,
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, _, _) =>
+                      const Icon(Icons.broken_image_outlined, size: 56),
+                ),
+              ),
+            ),
+    );
+  }
+}
+
 class _ClubMapPreview extends StatefulWidget {
   const _ClubMapPreview({
     required this.clubs,
     required this.selectedClub,
     required this.mapProvider,
     required this.onClubSelected,
+    required this.onOpenClub,
   });
 
   final List<ClubSummary> clubs;
   final ClubSummary? selectedClub;
   final ClubMapProvider mapProvider;
   final ValueChanged<ClubSummary> onClubSelected;
+  final ValueChanged<ClubSummary> onOpenClub;
 
   @override
   State<_ClubMapPreview> createState() => _ClubMapPreviewState();
@@ -1094,6 +1554,7 @@ class _ClubMapPreviewState extends State<_ClubMapPreview> {
             selectedClub: widget.selectedClub,
             mapProvider: widget.mapProvider,
             onClubSelected: widget.onClubSelected,
+            onOpenClub: widget.onOpenClub,
           );
         },
       ),
@@ -1187,12 +1648,14 @@ class _LiveClubMap extends StatefulWidget {
     required this.selectedClub,
     required this.mapProvider,
     required this.onClubSelected,
+    required this.onOpenClub,
   });
 
   final _ClubMapData data;
   final ClubSummary? selectedClub;
   final ClubMapProvider mapProvider;
   final ValueChanged<ClubSummary> onClubSelected;
+  final ValueChanged<ClubSummary> onOpenClub;
 
   @override
   State<_LiveClubMap> createState() => _LiveClubMapState();
@@ -1438,7 +1901,7 @@ class _LiveClubMapState extends State<_LiveClubMap> {
                       selectedPoi = null;
                       selectedClubPoint = null;
                     });
-                    widget.onClubSelected(club);
+                    widget.onOpenClub(club);
                   },
                 )
               : selectedClubValue != null
@@ -1447,7 +1910,7 @@ class _LiveClubMapState extends State<_LiveClubMap> {
                   onClose: () => setState(() => selectedClubPoint = null),
                   onOpenClub: (club) {
                     setState(() => selectedClubPoint = null);
-                    widget.onClubSelected(club);
+                    widget.onOpenClub(club);
                   },
                 )
               : _MapSummaryCard(data: widget.data),

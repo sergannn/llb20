@@ -387,6 +387,21 @@ function participant_fallback_key(array $participant): string {
     return '';
 }
 
+function ensure_column(PDO $pdo, string $table, string $column, string $definition): void {
+    if (!preg_match('/^[A-Za-z0-9_]+$/', $table) || !preg_match('/^[A-Za-z0-9_]+$/', $column)) {
+        throw new InvalidArgumentException('bad_identifier');
+    }
+    $stmt = $pdo->prepare('SELECT COUNT(*)
+                           FROM information_schema.COLUMNS
+                           WHERE TABLE_SCHEMA = DATABASE()
+                             AND TABLE_NAME = :table
+                             AND COLUMN_NAME = :column');
+    $stmt->execute([':table' => $table, ':column' => $column]);
+    if ((int)$stmt->fetchColumn() === 0) {
+        $pdo->exec("ALTER TABLE `{$table}` ADD COLUMN `{$column}` {$definition}");
+    }
+}
+
 function ensure_llb_app_users_table(PDO $pdo): void {
     $pdo->exec('CREATE TABLE IF NOT EXISTS llb_app_users (
         id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -554,11 +569,17 @@ function ensure_app_tournament_participants_table(PDO $pdo): void {
 function ensure_clubs_table(PDO $pdo): void {
     $pdo->exec('CREATE TABLE IF NOT EXISTS clubs (
         id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        llb_id BIGINT UNSIGNED NULL,
         name VARCHAR(255) NOT NULL,
         city VARCHAR(255) NOT NULL,
         address VARCHAR(500) NULL,
+        image_url VARCHAR(500) NULL,
         latitude DECIMAL(10,7) NULL,
         longitude DECIMAL(10,7) NULL,
+        tables_pyramid INT NULL,
+        tables_pool INT NULL,
+        tables_snooker INT NULL,
+        tables_total INT NULL,
         phone VARCHAR(128) NULL,
         website VARCHAR(500) NULL,
         created_by VARCHAR(190) NULL,
@@ -566,18 +587,31 @@ function ensure_clubs_table(PDO $pdo): void {
         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         UNIQUE KEY uniq_club_city_name (city, name),
+        KEY idx_clubs_llb_id (llb_id),
         KEY idx_clubs_city (city)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci');
+    ensure_column($pdo, 'clubs', 'llb_id', 'BIGINT UNSIGNED NULL');
+    ensure_column($pdo, 'clubs', 'image_url', 'VARCHAR(500) NULL');
+    ensure_column($pdo, 'clubs', 'tables_pyramid', 'INT NULL');
+    ensure_column($pdo, 'clubs', 'tables_pool', 'INT NULL');
+    ensure_column($pdo, 'clubs', 'tables_snooker', 'INT NULL');
+    ensure_column($pdo, 'clubs', 'tables_total', 'INT NULL');
 }
 
 function club_response_row(array $row): array {
     return [
         'id' => (string)($row['id'] ?? ''),
+        'llb_id' => (string)($row['llb_id'] ?? ''),
         'name' => (string)($row['name'] ?? ''),
         'city' => (string)($row['city'] ?? ''),
         'address' => (string)($row['address'] ?? ''),
+        'image_url' => (string)($row['image_url'] ?? ''),
         'latitude' => isset($row['latitude']) ? (float)$row['latitude'] : null,
         'longitude' => isset($row['longitude']) ? (float)$row['longitude'] : null,
+        'tables_pyramid' => isset($row['tables_pyramid']) ? (int)$row['tables_pyramid'] : null,
+        'tables_pool' => isset($row['tables_pool']) ? (int)$row['tables_pool'] : null,
+        'tables_snooker' => isset($row['tables_snooker']) ? (int)$row['tables_snooker'] : null,
+        'tables_total' => isset($row['tables_total']) ? (int)$row['tables_total'] : null,
         'phone' => (string)($row['phone'] ?? ''),
         'website' => (string)($row['website'] ?? ''),
         'created_by' => (string)($row['created_by'] ?? ''),
@@ -1546,37 +1580,60 @@ try {
             $phone = trim((string)($body['phone'] ?? ''));
             $website = trim((string)($body['website'] ?? ''));
             $createdBy = trim((string)($body['created_by'] ?? ''));
+            $llbId = $body['llb_id'] ?? null;
+            $imageUrl = trim((string)($body['image_url'] ?? ''));
+            $tablesPyramid = $body['tables_pyramid'] ?? null;
+            $tablesPool = $body['tables_pool'] ?? null;
+            $tablesSnooker = $body['tables_snooker'] ?? null;
+            $tablesTotal = $body['tables_total'] ?? null;
             $latitude = $body['latitude'] ?? null;
             $longitude = $body['longitude'] ?? null;
             if ($name === '' || $city === '') {
                 respond(['error' => 'name_and_city_required'], 400);
             }
-            if (mb_strlen($name) > 255 || mb_strlen($city) > 255 || mb_strlen($address) > 500 || mb_strlen($phone) > 128 || mb_strlen($website) > 500) {
+            if (mb_strlen($name) > 255 || mb_strlen($city) > 255 || mb_strlen($address) > 500 || mb_strlen($phone) > 128 || mb_strlen($website) > 500 || mb_strlen($imageUrl) > 500) {
                 respond(['error' => 'value_too_long'], 400);
             }
+            $llbIdValue = is_numeric($llbId) ? (int)$llbId : null;
             $latValue = is_numeric($latitude) ? (float)$latitude : null;
             $lngValue = is_numeric($longitude) ? (float)$longitude : null;
+            $tablesPyramidValue = is_numeric($tablesPyramid) ? (int)$tablesPyramid : null;
+            $tablesPoolValue = is_numeric($tablesPool) ? (int)$tablesPool : null;
+            $tablesSnookerValue = is_numeric($tablesSnooker) ? (int)$tablesSnooker : null;
+            $tablesTotalValue = is_numeric($tablesTotal) ? (int)$tablesTotal : null;
             if (($latValue !== null && ($latValue < -90 || $latValue > 90)) || ($lngValue !== null && ($lngValue < -180 || $lngValue > 180))) {
                 respond(['error' => 'bad_coordinates'], 400);
             }
             $stmt = $pdo->prepare('INSERT INTO clubs
-                  (name, city, address, latitude, longitude, phone, website, created_by, request_ip)
-                  VALUES (:name, :city, :address, :latitude, :longitude, :phone, :website, :created_by, :request_ip)
+                  (llb_id, name, city, address, image_url, latitude, longitude, tables_pyramid, tables_pool, tables_snooker, tables_total, phone, website, created_by, request_ip)
+                  VALUES (:llb_id, :name, :city, :address, :image_url, :latitude, :longitude, :tables_pyramid, :tables_pool, :tables_snooker, :tables_total, :phone, :website, :created_by, :request_ip)
                   ON DUPLICATE KEY UPDATE
+                    llb_id = VALUES(llb_id),
                     address = VALUES(address),
+                    image_url = VALUES(image_url),
                     latitude = VALUES(latitude),
                     longitude = VALUES(longitude),
+                    tables_pyramid = VALUES(tables_pyramid),
+                    tables_pool = VALUES(tables_pool),
+                    tables_snooker = VALUES(tables_snooker),
+                    tables_total = VALUES(tables_total),
                     phone = VALUES(phone),
                     website = VALUES(website),
                     created_by = VALUES(created_by),
                     request_ip = VALUES(request_ip),
                     updated_at = NOW()');
             $stmt->execute([
+                ':llb_id' => $llbIdValue,
                 ':name' => $name,
                 ':city' => $city,
                 ':address' => $address,
+                ':image_url' => $imageUrl,
                 ':latitude' => $latValue,
                 ':longitude' => $lngValue,
+                ':tables_pyramid' => $tablesPyramidValue,
+                ':tables_pool' => $tablesPoolValue,
+                ':tables_snooker' => $tablesSnookerValue,
+                ':tables_total' => $tablesTotalValue,
                 ':phone' => $phone,
                 ':website' => $website,
                 ':created_by' => $createdBy,
@@ -1611,15 +1668,16 @@ try {
         if ($where) {
             $sql .= ' WHERE ' . implode(' AND ', $where);
         }
+        $clubLimit = int_param('limit', 1000, 1, 3000);
         $sql .= ' ORDER BY c.city ASC, c.name ASC LIMIT :limit OFFSET :offset';
         $stmt = $pdo->prepare($sql);
         foreach ($params as $key => $value) {
             $stmt->bindValue($key, $value, PDO::PARAM_STR);
         }
-        $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+        $stmt->bindValue(':limit', $clubLimit, PDO::PARAM_INT);
         $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
         $stmt->execute();
-        respond(['items' => array_map('club_response_row', $stmt->fetchAll()), 'limit' => $limit, 'offset' => $offset]);
+        respond(['items' => array_map('club_response_row', $stmt->fetchAll()), 'limit' => $clubLimit, 'offset' => $offset]);
     }
 
     if ($resource === 'tournament_media') {

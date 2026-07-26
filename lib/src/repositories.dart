@@ -37,6 +37,8 @@ abstract class LeagueRepository {
     String address = '',
     String phone = '',
     String website = '',
+    double? latitude,
+    double? longitude,
     String createdBy = '',
   });
   Future<List<TournamentMedia>> tournamentMedia(Tournament tournament);
@@ -88,22 +90,34 @@ class ClubSummaryData {
     required this.name,
     required this.city,
     this.id = '',
+    this.llbId = '',
     this.address = '',
     this.phone = '',
     this.website = '',
+    this.imageUrl = '',
     this.latitude,
     this.longitude,
+    this.tablesPyramid,
+    this.tablesPool,
+    this.tablesSnooker,
+    this.tablesTotal,
     this.tournamentsCount = 0,
   });
 
   final String id;
+  final String llbId;
   final String name;
   final String city;
   final String address;
   final String phone;
   final String website;
+  final String imageUrl;
   final double? latitude;
   final double? longitude;
+  final int? tablesPyramid;
+  final int? tablesPool;
+  final int? tablesSnooker;
+  final int? tablesTotal;
   final int tournamentsCount;
 
   String get searchText => '$name $city $address'.toLowerCase();
@@ -156,7 +170,7 @@ class ApiLeagueRepository implements LeagueRepository {
     try {
       final rows = await _getList('clubs', {
         if (city.trim().isNotEmpty) 'city': city.trim(),
-        'limit': '300',
+        'limit': '3000',
       });
       _clubs = rows.map(_clubFromJson).toList();
       return _clubs;
@@ -172,6 +186,8 @@ class ApiLeagueRepository implements LeagueRepository {
     String address = '',
     String phone = '',
     String website = '',
+    double? latitude,
+    double? longitude,
     String createdBy = '',
   }) async {
     final uri = Uri.parse(
@@ -187,6 +203,8 @@ class ApiLeagueRepository implements LeagueRepository {
             'address': address,
             'phone': phone,
             'website': website,
+            if (latitude != null) 'latitude': latitude,
+            if (longitude != null) 'longitude': longitude,
             'created_by': createdBy,
           }),
         )
@@ -423,7 +441,7 @@ class ApiLeagueRepository implements LeagueRepository {
           'limit': '$tournamentsLimit',
         }),
         _getList('video_streams', {'limit': '100'}),
-        _getList('clubs', {'limit': '300'}),
+        _getList('clubs', {'limit': '3000'}),
       ]);
       final tournamentRows = [...results[1], ...results[2], ...results[3]];
       _applyRows(
@@ -756,13 +774,19 @@ class ApiLeagueRepository implements LeagueRepository {
   ClubSummaryData _clubFromJson(Map<String, dynamic> json) {
     return ClubSummaryData(
       id: _text(json['id']),
+      llbId: _text(json['llb_id']),
       name: _text(json['name']),
       city: _text(json['city']),
       address: _text(json['address']),
       phone: _text(json['phone']),
       website: _text(json['website']),
+      imageUrl: _text(json['image_url']),
       latitude: _doubleValue(json['latitude']),
       longitude: _doubleValue(json['longitude']),
+      tablesPyramid: _intValue(json['tables_pyramid']),
+      tablesPool: _intValue(json['tables_pool']),
+      tablesSnooker: _intValue(json['tables_snooker']),
+      tablesTotal: _intValue(json['tables_total']),
       tournamentsCount: _intValue(json['tournaments_count']) ?? 0,
     );
   }
@@ -1130,6 +1154,8 @@ class EmptyLeagueRepository implements LeagueRepository {
     String address = '',
     String phone = '',
     String website = '',
+    double? latitude,
+    double? longitude,
     String createdBy = '',
   }) async {
     throw UnsupportedError('Club creation is not available');
@@ -1378,6 +1404,8 @@ class MockLeagueRepository implements LeagueRepository {
     String address = '',
     String phone = '',
     String website = '',
+    double? latitude,
+    double? longitude,
     String createdBy = '',
   }) async {
     return ClubSummaryData(
@@ -1386,6 +1414,8 @@ class MockLeagueRepository implements LeagueRepository {
       address: address,
       phone: phone,
       website: website,
+      latitude: latitude,
+      longitude: longitude,
     );
   }
 

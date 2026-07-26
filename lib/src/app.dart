@@ -281,6 +281,7 @@ class _LeagueHomePageState extends State<LeagueHomePage> {
         Navigator.of(context).push(
           MaterialPageRoute(
             builder: (_) => ClubsPage(
+              repository: repository,
               clubs: clubs,
               initialCity: selectedCity,
               mapProvider: selectedClubMapProvider,
@@ -537,11 +538,20 @@ class _LeagueHomePageState extends State<LeagueHomePage> {
       final key = '${city.toLowerCase()}::$name'.toLowerCase();
       storedKeys.add(key);
       byKey[key] = ClubSummary(
+        id: club.id,
+        llbId: club.llbId,
         name: name,
         city: city,
         address: club.address,
+        phone: club.phone,
+        website: club.website,
+        imageUrl: club.imageUrl,
         latitude: club.latitude,
         longitude: club.longitude,
+        tablesPyramid: club.tablesPyramid,
+        tablesPool: club.tablesPool,
+        tablesSnooker: club.tablesSnooker,
+        tablesTotal: club.tablesTotal,
         tournamentsCount: club.tournamentsCount,
       );
     }
@@ -560,8 +570,15 @@ class _LeagueHomePageState extends State<LeagueHomePage> {
         name: name,
         city: city,
         address: previous?.address ?? '',
+        phone: previous?.phone ?? '',
+        website: previous?.website ?? '',
+        imageUrl: previous?.imageUrl ?? '',
         latitude: previous?.latitude,
         longitude: previous?.longitude,
+        tablesPyramid: previous?.tablesPyramid,
+        tablesPool: previous?.tablesPool,
+        tablesSnooker: previous?.tablesSnooker,
+        tablesTotal: previous?.tablesTotal,
         tournamentsCount: (previous?.tournamentsCount ?? 0) + 1,
       );
     }
