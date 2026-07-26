@@ -452,16 +452,107 @@ class _ClubMapPreviewState extends State<_ClubMapPreview> {
     }
   }
 
+  Map<String, String> _mapboxLocationParams(String city) {
+    final bounds = _boundsForCity(city);
+    return {
+      'country': 'ru',
+      if (bounds != null) ...{
+        'proximity': '${bounds.centerLongitude},${bounds.centerLatitude}',
+        'bbox':
+            '${bounds.minLongitude},${bounds.minLatitude},'
+            '${bounds.maxLongitude},${bounds.maxLatitude}',
+      },
+    };
+  }
+
+  Map<String, String> _nominatimLocationParams(String city) {
+    final bounds = _boundsForCity(city);
+    if (bounds == null) {
+      return const {};
+    }
+    return {
+      'bounded': '1',
+      'viewbox':
+          '${bounds.minLongitude},${bounds.maxLatitude},'
+          '${bounds.maxLongitude},${bounds.minLatitude}',
+    };
+  }
+
+  bool _pointFitsCity(String city, _MapPoint point) {
+    final bounds = _boundsForCity(city);
+    if (bounds != null) {
+      return bounds.contains(point);
+    }
+    return _russiaBounds.contains(point);
+  }
+
+  _GeoBounds? _boundsForCity(String city) {
+    final normalized = city.toLowerCase().replaceAll('ё', 'е').trim();
+    if (normalized.contains('санкт-петербург') ||
+        normalized.contains('петербург')) {
+      return const _GeoBounds(
+        minLatitude: 59.55,
+        maxLatitude: 60.25,
+        minLongitude: 29.35,
+        maxLongitude: 31.05,
+      );
+    }
+    if (normalized.contains('архангельск')) {
+      return const _GeoBounds(
+        minLatitude: 64.25,
+        maxLatitude: 64.85,
+        minLongitude: 39.75,
+        maxLongitude: 41.25,
+      );
+    }
+    if (normalized.contains('витязево') || normalized.contains('анап')) {
+      return const _GeoBounds(
+        minLatitude: 44.85,
+        maxLatitude: 45.15,
+        minLongitude: 37.05,
+        maxLongitude: 37.45,
+      );
+    }
+    if (normalized.contains('волгоград')) {
+      return const _GeoBounds(
+        minLatitude: 48.35,
+        maxLatitude: 49.15,
+        minLongitude: 44.05,
+        maxLongitude: 45.15,
+      );
+    }
+    if (normalized.contains('воронеж')) {
+      return const _GeoBounds(
+        minLatitude: 51.35,
+        maxLatitude: 52.0,
+        minLongitude: 38.7,
+        maxLongitude: 39.7,
+      );
+    }
+    if (normalized == 'москва' || normalized == 'мос') {
+      return const _GeoBounds(
+        minLatitude: 55.25,
+        maxLatitude: 56.15,
+        minLongitude: 36.65,
+        maxLongitude: 38.35,
+      );
+    }
+    return null;
+  }
+
   Future<_ClubMapPoint?> _resolveClubPoint(
     ClubSummary club,
     String token,
     List<_PoiMapPoint> poiPoints,
   ) async {
     if (club.latitude != null && club.longitude != null) {
-      return _ClubMapPoint(
-        club: club,
-        point: _MapPoint(latitude: club.latitude!, longitude: club.longitude!),
+      final point = _MapPoint(
+        latitude: club.latitude!,
+        longitude: club.longitude!,
       );
+      if (_pointFitsCity(club.city, point)) {
+        return _ClubMapPoint(club: club, point: point);
+      }
     }
     final poiMatch = _matchPoiToClub(club, poiPoints);
     if (poiMatch != null) {
@@ -486,7 +577,7 @@ class _ClubMapPreviewState extends State<_ClubMapPreview> {
       final uri = Uri.parse(
         'https://api.mapbox.com/geocoding/v5/mapbox.places/'
         '${Uri.encodeComponent(query)}.json'
-        '?${Uri(queryParameters: {'access_token': token, 'limit': '1', 'language': 'ru', 'country': 'ru'}).query}',
+        '?${Uri(queryParameters: {'access_token': token, 'limit': '1', 'language': 'ru', ..._mapboxLocationParams(club.city)}).query}',
       );
       try {
         final response = await http
@@ -508,13 +599,14 @@ class _ClubMapPreviewState extends State<_ClubMapPreview> {
         if (center is! List || center.length < 2) {
           continue;
         }
-        return _ClubMapPoint(
-          club: club,
-          point: _MapPoint(
-            latitude: (center[1] as num).toDouble(),
-            longitude: (center[0] as num).toDouble(),
-          ),
+        final point = _MapPoint(
+          latitude: (center[1] as num).toDouble(),
+          longitude: (center[0] as num).toDouble(),
         );
+        if (!_pointFitsCity(club.city, point)) {
+          continue;
+        }
+        return _ClubMapPoint(club: club, point: point);
       } catch (_) {
         continue;
       }
@@ -532,6 +624,7 @@ class _ClubMapPreviewState extends State<_ClubMapPreview> {
         'language': 'ru',
         'limit': '5',
         'access_token': token,
+        ..._mapboxLocationParams(club.city),
       });
       try {
         final response = await http
@@ -550,6 +643,9 @@ class _ClubMapPreviewState extends State<_ClubMapPreview> {
           if (point == null) {
             continue;
           }
+          if (!_pointFitsCity(club.city, point)) {
+            continue;
+          }
           return _ClubMapPoint(club: club, point: point);
         }
       } catch (_) {
@@ -565,6 +661,8 @@ class _ClubMapPreviewState extends State<_ClubMapPreview> {
         'q': query,
         'format': 'jsonv2',
         'limit': '1',
+        'countrycodes': 'ru',
+        ..._nominatimLocationParams(club.city),
       });
       try {
         final response = await http
@@ -588,10 +686,11 @@ class _ClubMapPreviewState extends State<_ClubMapPreview> {
         if (!_queryLooksPrecise(query) && !_matchesClubText(club, label)) {
           continue;
         }
-        return _ClubMapPoint(
-          club: club,
-          point: _MapPoint(latitude: lat, longitude: lon),
-        );
+        final point = _MapPoint(latitude: lat, longitude: lon);
+        if (!_pointFitsCity(club.city, point)) {
+          continue;
+        }
+        return _ClubMapPoint(club: club, point: point);
       } catch (_) {
         continue;
       }
@@ -605,6 +704,7 @@ class _ClubMapPreviewState extends State<_ClubMapPreview> {
       'language': 'ru',
       'limit': '12',
       'access_token': token,
+      ..._mapboxLocationParams(city),
     });
     try {
       final response = await http
@@ -619,6 +719,9 @@ class _ClubMapPreviewState extends State<_ClubMapPreview> {
       for (final feature in features.whereType<Map<String, dynamic>>()) {
         final point = _searchboxPoint(feature);
         if (point == null) {
+          continue;
+        }
+        if (!_pointFitsCity(city, point)) {
           continue;
         }
         final properties =
@@ -653,6 +756,8 @@ class _ClubMapPreviewState extends State<_ClubMapPreview> {
         'q': query,
         'format': 'jsonv2',
         'limit': '8',
+        'countrycodes': 'ru',
+        ..._nominatimLocationParams(city),
       });
       try {
         final response = await http
@@ -668,6 +773,10 @@ class _ClubMapPreviewState extends State<_ClubMapPreview> {
           if (lat == null || lon == null) {
             continue;
           }
+          final point = _MapPoint(latitude: lat, longitude: lon);
+          if (!_pointFitsCity(city, point)) {
+            continue;
+          }
           final name = '${item['name'] ?? item['display_name'] ?? ''}'.trim();
           final address = '${item['display_name'] ?? ''}'.trim();
           if (name.isEmpty || address.isEmpty) {
@@ -678,13 +787,7 @@ class _ClubMapPreviewState extends State<_ClubMapPreview> {
           if (!seen.add(key)) {
             continue;
           }
-          points.add(
-            _PoiMapPoint(
-              name: name,
-              address: address,
-              point: _MapPoint(latitude: lat, longitude: lon),
-            ),
-          );
+          points.add(_PoiMapPoint(name: name, address: address, point: point));
         }
       } catch (_) {
         continue;
@@ -1004,6 +1107,37 @@ class _MapPoint {
   final double latitude;
   final double longitude;
 }
+
+class _GeoBounds {
+  const _GeoBounds({
+    required this.minLatitude,
+    required this.maxLatitude,
+    required this.minLongitude,
+    required this.maxLongitude,
+  });
+
+  final double minLatitude;
+  final double maxLatitude;
+  final double minLongitude;
+  final double maxLongitude;
+
+  double get centerLatitude => (minLatitude + maxLatitude) / 2;
+  double get centerLongitude => (minLongitude + maxLongitude) / 2;
+
+  bool contains(_MapPoint point) {
+    return point.latitude >= minLatitude &&
+        point.latitude <= maxLatitude &&
+        point.longitude >= minLongitude &&
+        point.longitude <= maxLongitude;
+  }
+}
+
+const _russiaBounds = _GeoBounds(
+  minLatitude: 41,
+  maxLatitude: 82,
+  minLongitude: 19,
+  maxLongitude: 190,
+);
 
 class _ClubMapPoint {
   const _ClubMapPoint({required this.club, required this.point});
