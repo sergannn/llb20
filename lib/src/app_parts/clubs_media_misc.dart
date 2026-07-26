@@ -1186,25 +1186,6 @@ class _LiveClubMapState extends State<_LiveClubMap> {
             ),
           ),
         ),
-      if (selectedPoi != null)
-        Marker(
-          point: LatLng(
-            selectedPoi.point.latitude,
-            selectedPoi.point.longitude,
-          ),
-          width: 260,
-          height: 142,
-          alignment: const Alignment(0, -1.35),
-          child: _MapFeaturePopup(
-            poi: selectedPoi,
-            linkedClub: _linkedClub(selectedPoi),
-            onClose: () => setState(() => this.selectedPoi = null),
-            onOpenClub: (club) {
-              setState(() => this.selectedPoi = null);
-              widget.onClubSelected(club);
-            },
-          ),
-        ),
       for (final item in widget.data.clubPoints)
         Marker(
           point: LatLng(item.point.latitude, item.point.longitude),
@@ -1259,6 +1240,7 @@ class _LiveClubMapState extends State<_LiveClubMap> {
 
   @override
   Widget build(BuildContext context) {
+    final selectedPoiValue = selectedPoi;
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -1278,15 +1260,25 @@ class _LiveClubMapState extends State<_LiveClubMap> {
           left: 12,
           right: 12,
           bottom: 12,
-          child: _MapSummaryCard(data: widget.data),
+          child: selectedPoiValue == null
+              ? _MapSummaryCard(data: widget.data)
+              : _MapFeatureBottomCard(
+                  poi: selectedPoiValue,
+                  linkedClub: _linkedClub(selectedPoiValue),
+                  onClose: () => setState(() => selectedPoi = null),
+                  onOpenClub: (club) {
+                    setState(() => selectedPoi = null);
+                    widget.onClubSelected(club);
+                  },
+                ),
         ),
       ],
     );
   }
 }
 
-class _MapFeaturePopup extends StatelessWidget {
-  const _MapFeaturePopup({
+class _MapFeatureBottomCard extends StatelessWidget {
+  const _MapFeatureBottomCard({
     required this.poi,
     required this.linkedClub,
     required this.onClose,
@@ -1305,11 +1297,9 @@ class _MapFeaturePopup extends StatelessWidget {
       decoration: BoxDecoration(
         color: scheme.surface.withValues(alpha: 0.95),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: scheme.outlineVariant),
-        boxShadow: const [BoxShadow(color: Color(0x26000000), blurRadius: 12)],
       ),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(10, 9, 6, 10),
+        padding: const EdgeInsets.fromLTRB(10, 10, 6, 10),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
