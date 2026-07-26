@@ -340,6 +340,7 @@ class _SettingsDrawer extends StatelessWidget {
     required this.repository,
     required this.selectedCity,
     required this.selectedDiscipline,
+    required this.selectedClubMapProvider,
     required this.clubs,
     required this.llbUsername,
     required this.llbPlayerId,
@@ -347,6 +348,7 @@ class _SettingsDrawer extends StatelessWidget {
     required this.citySuggestions,
     required this.onCitySelected,
     required this.onDisciplineSelected,
+    required this.onClubMapProviderSelected,
     required this.onLlbLogin,
     required this.onLlbLogout,
   });
@@ -354,6 +356,7 @@ class _SettingsDrawer extends StatelessWidget {
   final LeagueRepository repository;
   final String selectedCity;
   final DisciplineFilter selectedDiscipline;
+  final ClubMapProvider selectedClubMapProvider;
   final List<ClubSummary> clubs;
   final String? llbUsername;
   final String? llbPlayerId;
@@ -361,6 +364,7 @@ class _SettingsDrawer extends StatelessWidget {
   final List<String> Function(String query) citySuggestions;
   final ValueChanged<String> onCitySelected;
   final ValueChanged<DisciplineFilter> onDisciplineSelected;
+  final ValueChanged<ClubMapProvider> onClubMapProviderSelected;
   final VoidCallback onLlbLogin;
   final VoidCallback onLlbLogout;
 
@@ -464,6 +468,7 @@ class _SettingsDrawer extends StatelessWidget {
                             builder: (_) => ClubsPage(
                               clubs: clubs,
                               initialCity: selectedCity,
+                              mapProvider: selectedClubMapProvider,
                             ),
                           ),
                         );
@@ -522,7 +527,7 @@ class _SettingsDrawer extends StatelessWidget {
                       leading: const Icon(Icons.settings_outlined),
                       title: const Text('Настройки'),
                       subtitle: Text(
-                        '$selectedCity · ${selectedDiscipline.label}',
+                        '$selectedCity · ${selectedDiscipline.label} · ${selectedClubMapProvider.label}',
                         style: const TextStyle(color: Colors.white70),
                       ),
                       trailing: const Icon(Icons.chevron_right),
@@ -532,9 +537,12 @@ class _SettingsDrawer extends StatelessWidget {
                             builder: (_) => _DefaultSettingsPage(
                               selectedCity: selectedCity,
                               selectedDiscipline: selectedDiscipline,
+                              selectedClubMapProvider: selectedClubMapProvider,
                               citySuggestions: citySuggestions,
                               onCitySelected: onCitySelected,
                               onDisciplineSelected: onDisciplineSelected,
+                              onClubMapProviderSelected:
+                                  onClubMapProviderSelected,
                             ),
                           ),
                         );
@@ -803,16 +811,20 @@ class _DefaultSettingsPage extends StatefulWidget {
   const _DefaultSettingsPage({
     required this.selectedCity,
     required this.selectedDiscipline,
+    required this.selectedClubMapProvider,
     required this.citySuggestions,
     required this.onCitySelected,
     required this.onDisciplineSelected,
+    required this.onClubMapProviderSelected,
   });
 
   final String selectedCity;
   final DisciplineFilter selectedDiscipline;
+  final ClubMapProvider selectedClubMapProvider;
   final List<String> Function(String query) citySuggestions;
   final ValueChanged<String> onCitySelected;
   final ValueChanged<DisciplineFilter> onDisciplineSelected;
+  final ValueChanged<ClubMapProvider> onClubMapProviderSelected;
 
   @override
   State<_DefaultSettingsPage> createState() => _DefaultSettingsPageState();
@@ -821,6 +833,7 @@ class _DefaultSettingsPage extends StatefulWidget {
 class _DefaultSettingsPageState extends State<_DefaultSettingsPage> {
   late String selectedCity = widget.selectedCity;
   late DisciplineFilter selectedDiscipline = widget.selectedDiscipline;
+  late ClubMapProvider selectedClubMapProvider = widget.selectedClubMapProvider;
 
   Future<void> pickCity() async {
     final city = await showModalBottomSheet<String>(
@@ -857,6 +870,11 @@ class _DefaultSettingsPageState extends State<_DefaultSettingsPage> {
     }
   }
 
+  void pickClubMapProvider(ClubMapProvider provider) {
+    widget.onClubMapProviderSelected(provider);
+    setState(() => selectedClubMapProvider = provider);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -881,6 +899,45 @@ class _DefaultSettingsPageState extends State<_DefaultSettingsPage> {
                   subtitle: Text(selectedDiscipline.label),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: pickDiscipline,
+                ),
+                const Divider(height: 1),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.map_outlined),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Text(
+                              'Карта клубов',
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      SegmentedButton<ClubMapProvider>(
+                        segments: const [
+                          ButtonSegment(
+                            value: ClubMapProvider.osm,
+                            icon: Icon(Icons.public),
+                            label: Text('OSM'),
+                          ),
+                          ButtonSegment(
+                            value: ClubMapProvider.mapbox,
+                            icon: Icon(Icons.map),
+                            label: Text('Mapbox'),
+                          ),
+                        ],
+                        selected: {selectedClubMapProvider},
+                        onSelectionChanged: (value) =>
+                            pickClubMapProvider(value.single),
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),

@@ -56,6 +56,7 @@ class _LeagueHomePageState extends State<LeagueHomePage> {
   static const _selectedCityKey = 'selected_city';
   static const _recentCitiesKey = 'recent_cities';
   static const _disciplineKey = 'selected_discipline';
+  static const _clubMapProviderKey = 'club_map_provider';
   static const _llbUsernameKey = 'llb_username';
   static const _llbCookiesKey = 'llb_cookies';
   static const _llbPlayerIdKey = 'llb_player_id';
@@ -85,6 +86,7 @@ class _LeagueHomePageState extends State<LeagueHomePage> {
   String search = _initialSearch;
   String selectedCity = _defaultCity;
   DisciplineFilter selectedDiscipline = DisciplineFilter.russianBilliards;
+  ClubMapProvider selectedClubMapProvider = ClubMapProvider.osm;
   List<String> recentCities = const [];
   PlayerSort playerSort = PlayerSort.russianBilliards;
   bool playerSortAscending = false;
@@ -278,8 +280,11 @@ class _LeagueHomePageState extends State<LeagueHomePage> {
         final clubs = clubSummaries();
         Navigator.of(context).push(
           MaterialPageRoute(
-            builder: (_) =>
-                ClubsPage(clubs: clubs, initialCity: selectedCity),
+            builder: (_) => ClubsPage(
+              clubs: clubs,
+              initialCity: selectedCity,
+              mapProvider: selectedClubMapProvider,
+            ),
           ),
         );
         break;
@@ -335,12 +340,16 @@ class _LeagueHomePageState extends State<LeagueHomePage> {
     final savedDiscipline = DisciplineFilter.fromStorage(
       prefs.getString(_disciplineKey),
     );
+    final savedClubMapProvider = ClubMapProvider.fromStorage(
+      prefs.getString(_clubMapProviderKey),
+    );
     if (!mounted) {
       return;
     }
     setState(() {
       selectedCity = savedCity ?? _defaultCity;
       selectedDiscipline = savedDiscipline;
+      selectedClubMapProvider = savedClubMapProvider;
       recentCities = prefs.getStringList(_recentCitiesKey) ?? const [];
     });
   }
@@ -448,6 +457,15 @@ class _LeagueHomePageState extends State<LeagueHomePage> {
       selectedDiscipline = discipline;
       selectedTab = 0;
     });
+  }
+
+  Future<void> selectClubMapProvider(ClubMapProvider provider) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_clubMapProviderKey, provider.storageKey);
+    if (!mounted) {
+      return;
+    }
+    setState(() => selectedClubMapProvider = provider);
   }
 
   List<String> citySuggestions(String query) {
@@ -687,6 +705,7 @@ class _LeagueHomePageState extends State<LeagueHomePage> {
         repository: repository,
         selectedCity: selectedCity,
         selectedDiscipline: selectedDiscipline,
+        selectedClubMapProvider: selectedClubMapProvider,
         clubs: clubSummaries(),
         llbUsername: llbUsername,
         llbPlayerId: llbPlayerId,
@@ -694,6 +713,7 @@ class _LeagueHomePageState extends State<LeagueHomePage> {
         citySuggestions: citySuggestions,
         onCitySelected: selectCity,
         onDisciplineSelected: selectDiscipline,
+        onClubMapProviderSelected: selectClubMapProvider,
         onLlbLogin: showLlbLoginDialog,
         onLlbLogout: logoutLlb,
       ),

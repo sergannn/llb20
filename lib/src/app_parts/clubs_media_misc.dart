@@ -24,11 +24,36 @@ class ClubSummary {
 
 enum _ClubsView { map, list }
 
+enum ClubMapProvider {
+  osm('osm', 'OSM'),
+  mapbox('mapbox', 'Mapbox');
+
+  const ClubMapProvider(this.storageKey, this.label);
+
+  final String storageKey;
+  final String label;
+
+  static ClubMapProvider fromStorage(String? raw) {
+    for (final provider in values) {
+      if (provider.storageKey == raw) {
+        return provider;
+      }
+    }
+    return ClubMapProvider.osm;
+  }
+}
+
 class ClubsPage extends StatefulWidget {
-  const ClubsPage({super.key, required this.clubs, required this.initialCity});
+  const ClubsPage({
+    super.key,
+    required this.clubs,
+    required this.initialCity,
+    required this.mapProvider,
+  });
 
   final List<ClubSummary> clubs;
   final String initialCity;
+  final ClubMapProvider mapProvider;
 
   @override
   State<ClubsPage> createState() => _ClubsPageState();
@@ -143,6 +168,7 @@ class _ClubsPageState extends State<ClubsPage> {
                   child: _ClubMapPreview(
                     clubs: clubs,
                     selectedClub: selectedClub,
+                    mapProvider: widget.mapProvider,
                     onClubSelected: (club) {
                       setState(() => selectedClub = club);
                     },
@@ -347,11 +373,13 @@ class _ClubMapPreview extends StatefulWidget {
   const _ClubMapPreview({
     required this.clubs,
     required this.selectedClub,
+    required this.mapProvider,
     required this.onClubSelected,
   });
 
   final List<ClubSummary> clubs;
   final ClubSummary? selectedClub;
+  final ClubMapProvider mapProvider;
   final ValueChanged<ClubSummary> onClubSelected;
 
   @override
@@ -961,6 +989,7 @@ class _ClubMapPreviewState extends State<_ClubMapPreview> {
           return _LiveClubMap(
             data: data,
             selectedClub: widget.selectedClub,
+            mapProvider: widget.mapProvider,
             onClubSelected: widget.onClubSelected,
           );
         },
@@ -1022,11 +1051,13 @@ class _LiveClubMap extends StatefulWidget {
   const _LiveClubMap({
     required this.data,
     required this.selectedClub,
+    required this.mapProvider,
     required this.onClubSelected,
   });
 
   final _ClubMapData data;
   final ClubSummary? selectedClub;
+  final ClubMapProvider mapProvider;
   final ValueChanged<ClubSummary> onClubSelected;
 
   @override
@@ -1157,6 +1188,22 @@ class _LiveClubMapState extends State<_LiveClubMap> {
     return markers;
   }
 
+  TileLayer _tileLayer() {
+    if (widget.mapProvider == ClubMapProvider.mapbox &&
+        widget.data.token.isNotEmpty) {
+      return TileLayer(
+        urlTemplate:
+            'https://api.mapbox.com/styles/v1/mapbox/streets-v12/tiles/256/'
+            '{z}/{x}/{y}@2x?access_token=${widget.data.token}',
+        userAgentPackageName: 'su.llb.llb_mobile',
+      );
+    }
+    return TileLayer(
+      urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+      userAgentPackageName: 'su.llb.llb_mobile',
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Stack(
@@ -1169,10 +1216,7 @@ class _LiveClubMapState extends State<_LiveClubMap> {
             initialZoom: _initialZoom(),
           ),
           children: [
-            TileLayer(
-              urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-              userAgentPackageName: 'su.llb.llb_mobile',
-            ),
+            _tileLayer(),
             MarkerLayer(markers: _buildMarkers(context)),
           ],
         ),
