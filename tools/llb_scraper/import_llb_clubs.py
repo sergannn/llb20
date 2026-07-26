@@ -12,6 +12,17 @@ from html.parser import HTMLParser
 
 LLB_BASE = "https://www.llb.su"
 API_BASE = "https://llb.panfilius.ru/llb-api/"
+RUSSIA_BOUNDS = (41.0, 82.0, 19.0, 190.0)
+CITY_BOUNDS = {
+    "санкт-петербург": (59.55, 60.25, 29.35, 31.05),
+    "петербург": (59.55, 60.25, 29.35, 31.05),
+    "архангельск": (64.25, 64.85, 39.75, 41.25),
+    "витязево": (44.85, 45.15, 37.05, 37.45),
+    "анап": (44.85, 45.15, 37.05, 37.45),
+    "волгоград": (48.35, 49.15, 44.05, 45.15),
+    "воронеж": (51.35, 52.0, 38.7, 39.7),
+    "москва": (55.25, 56.15, 36.65, 38.35),
+}
 
 
 class ClubsTableParser(HTMLParser):
@@ -133,19 +144,36 @@ def mapbox_token(api_base):
     return normalize_space(data.get("mapbox_access_token", ""))
 
 
+def bounds_for_city(city):
+    normalized = normalize_space(city).lower().replace("ё", "е")
+    for key, bounds in CITY_BOUNDS.items():
+        if key in normalized:
+            return bounds
+    return None
+
+
+def point_in_bounds(lat, lon, bounds):
+    min_lat, max_lat, min_lon, max_lon = bounds
+    return min_lat <= lat <= max_lat and min_lon <= lon <= max_lon
+
+
 def geocode(row, token):
     if not token:
         return None, None
     query = f"{row['name']}, {row['city']}, Россия"
-    params = urllib.parse.urlencode(
-        {
-            "q": query,
-            "language": "ru",
-            "country": "ru",
-            "limit": "1",
-            "access_token": token,
-        }
-    )
+    params = {
+        "q": query,
+        "language": "ru",
+        "country": "ru",
+        "limit": "1",
+        "access_token": token,
+    }
+    bounds = bounds_for_city(row["city"])
+    if bounds:
+        min_lat, max_lat, min_lon, max_lon = bounds
+        params["proximity"] = f"{(min_lon + max_lon) / 2},{(min_lat + max_lat) / 2}"
+        params["bbox"] = f"{min_lon},{min_lat},{max_lon},{max_lat}"
+    params = urllib.parse.urlencode(params)
     url = f"https://api.mapbox.com/search/searchbox/v1/forward?{params}"
     try:
         data = get_json(url)
@@ -158,7 +186,11 @@ def geocode(row, token):
     lat = coordinates.get("latitude")
     lon = coordinates.get("longitude")
     if isinstance(lat, (int, float)) and isinstance(lon, (int, float)):
-        return float(lat), float(lon)
+        lat = float(lat)
+        lon = float(lon)
+        if not point_in_bounds(lat, lon, bounds or RUSSIA_BOUNDS):
+            return None, None
+        return lat, lon
     return None, None
 
 

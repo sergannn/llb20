@@ -528,7 +528,6 @@ class _LeagueHomePageState extends State<LeagueHomePage> {
 
   List<ClubSummary> clubSummaries() {
     final byKey = <String, ClubSummary>{};
-    final storedKeys = <String>{};
     for (final club in repository.clubs()) {
       final name = club.name.trim();
       final city = club.city.trim();
@@ -536,7 +535,6 @@ class _LeagueHomePageState extends State<LeagueHomePage> {
         continue;
       }
       final key = '${city.toLowerCase()}::$name'.toLowerCase();
-      storedKeys.add(key);
       byKey[key] = ClubSummary(
         id: club.id,
         llbId: club.llbId,
@@ -562,11 +560,10 @@ class _LeagueHomePageState extends State<LeagueHomePage> {
         continue;
       }
       final key = '${city.toLowerCase()}::$name'.toLowerCase();
-      if (storedKeys.contains(key)) {
-        continue;
-      }
       final previous = byKey[key];
       byKey[key] = ClubSummary(
+        id: previous?.id ?? '',
+        llbId: previous?.llbId ?? '',
         name: name,
         city: city,
         address: previous?.address ?? '',
