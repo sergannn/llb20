@@ -1066,6 +1066,7 @@ class _LiveClubMap extends StatefulWidget {
 
 class _LiveClubMapState extends State<_LiveClubMap> {
   final MapController mapController = MapController();
+  _PoiMapPoint? selectedPoi;
 
   String _clubKey(ClubSummary club) =>
       '${club.city.toLowerCase()}::${club.name.toLowerCase()}';
@@ -1073,6 +1074,17 @@ class _LiveClubMapState extends State<_LiveClubMap> {
   @override
   void didUpdateWidget(covariant _LiveClubMap oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.data != widget.data && selectedPoi != null) {
+      final stillExists = widget.data.poiPoints.any(
+        (poi) =>
+            poi.name == selectedPoi!.name &&
+            poi.point.latitude == selectedPoi!.point.latitude &&
+            poi.point.longitude == selectedPoi!.point.longitude,
+      );
+      if (!stillExists) {
+        selectedPoi = null;
+      }
+    }
     final oldKey = oldWidget.selectedClub == null
         ? null
         : _clubKey(oldWidget.selectedClub!);
@@ -1120,35 +1132,60 @@ class _LiveClubMapState extends State<_LiveClubMap> {
 
   double _initialZoom() => widget.selectedClub == null ? 11.0 : 13.0;
 
+  ClubSummary? _linkedClub(_PoiMapPoint poi) {
+    final key = poi.linkedClubKey;
+    if (key == null) {
+      return null;
+    }
+    for (final item in widget.data.clubPoints) {
+      if (_clubKey(item.club) == key) {
+        return item.club;
+      }
+    }
+    return null;
+  }
+
   List<Marker> _buildMarkers(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final selectedKey = widget.selectedClub == null
         ? null
         : _clubKey(widget.selectedClub!);
+    final selectedPoi = this.selectedPoi;
     final markers = <Marker>[
       for (final poi in widget.data.poiPoints)
         Marker(
           point: LatLng(poi.point.latitude, poi.point.longitude),
-          width: 24,
-          height: 24,
-          child: IgnorePointer(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: poi.linkedClubKey == null
-                    ? const Color(0xFF4C82FB)
-                    : const Color(0xFFF7B32B),
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.white, width: 2.5),
-                boxShadow: const [
-                  BoxShadow(color: Color(0x30000000), blurRadius: 4),
-                ],
-              ),
-              child: Center(
+          width: selectedPoi == poi ? 40 : 32,
+          height: selectedPoi == poi ? 40 : 32,
+          child: GestureDetector(
+            onTap: () {
+              setState(() => this.selectedPoi = poi);
+              mapController.move(
+                LatLng(poi.point.latitude, poi.point.longitude),
+                mapController.camera.zoom < 13 ? 13 : mapController.camera.zoom,
+              );
+            },
+            child: Tooltip(
+              message: poi.name,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: poi.linkedClubKey == null
+                      ? const Color(0xFF3F7DFF)
+                      : const Color(0xFFF2A51A),
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: Colors.white,
+                    width: selectedPoi == poi ? 3 : 2.5,
+                  ),
+                  boxShadow: const [
+                    BoxShadow(color: Color(0x40000000), blurRadius: 8),
+                  ],
+                ),
                 child: Icon(
                   poi.linkedClubKey == null
-                      ? Icons.place_outlined
-                      : Icons.link_outlined,
-                  size: 12,
+                      ? Icons.info_outline
+                      : Icons.storefront,
+                  size: selectedPoi == poi ? 21 : 17,
                   color: Colors.white,
                 ),
               ),
@@ -1158,10 +1195,13 @@ class _LiveClubMapState extends State<_LiveClubMap> {
       for (final item in widget.data.clubPoints)
         Marker(
           point: LatLng(item.point.latitude, item.point.longitude),
-          width: _clubKey(item.club) == selectedKey ? 30 : 24,
-          height: _clubKey(item.club) == selectedKey ? 30 : 24,
+          width: _clubKey(item.club) == selectedKey ? 40 : 34,
+          height: _clubKey(item.club) == selectedKey ? 40 : 34,
           child: GestureDetector(
-            onTap: () => widget.onClubSelected(item.club),
+            onTap: () {
+              setState(() => this.selectedPoi = null);
+              widget.onClubSelected(item.club);
+            },
             child: Tooltip(
               message: item.club.name,
               child: DecoratedBox(
@@ -1177,7 +1217,7 @@ class _LiveClubMapState extends State<_LiveClubMap> {
                 ),
                 child: Icon(
                   Icons.storefront,
-                  size: _clubKey(item.club) == selectedKey ? 16 : 13,
+                  size: _clubKey(item.club) == selectedKey ? 22 : 18,
                   color: Colors.white,
                 ),
               ),
@@ -1214,6 +1254,7 @@ class _LiveClubMapState extends State<_LiveClubMap> {
           options: MapOptions(
             initialCenter: _initialCenter(),
             initialZoom: _initialZoom(),
+            onTap: (_, _) => setState(() => selectedPoi = null),
           ),
           children: [
             _tileLayer(),
@@ -1224,9 +1265,112 @@ class _LiveClubMapState extends State<_LiveClubMap> {
           left: 12,
           right: 12,
           bottom: 12,
-          child: _MapSummaryCard(data: widget.data),
+          child: selectedPoi == null
+              ? _MapSummaryCard(data: widget.data)
+              : _MapFeatureCard(
+                  poi: selectedPoi!,
+                  linkedClub: _linkedClub(selectedPoi!),
+                  onOpenClub: (club) {
+                    setState(() => selectedPoi = null);
+                    widget.onClubSelected(club);
+                  },
+                ),
         ),
       ],
+    );
+  }
+}
+
+class _MapFeatureCard extends StatelessWidget {
+  const _MapFeatureCard({
+    required this.poi,
+    required this.linkedClub,
+    required this.onOpenClub,
+  });
+
+  final _PoiMapPoint poi;
+  final ClubSummary? linkedClub;
+  final ValueChanged<ClubSummary> onOpenClub;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: scheme.surface.withValues(alpha: 0.95),
+        borderRadius: BorderRadius.circular(8),
+        boxShadow: const [BoxShadow(color: Color(0x26000000), blurRadius: 12)],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            DecoratedBox(
+              decoration: BoxDecoration(
+                color: linkedClub == null
+                    ? const Color(0xFF3F7DFF)
+                    : const Color(0xFFF2A51A),
+                shape: BoxShape.circle,
+              ),
+              child: SizedBox(
+                width: 44,
+                height: 44,
+                child: Icon(
+                  linkedClub == null ? Icons.info_outline : Icons.storefront,
+                  color: Colors.white,
+                  size: 25,
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    poi.name,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  if (poi.address.isNotEmpty) ...[
+                    const SizedBox(height: 3),
+                    Text(
+                      poi.address,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                  if (linkedClub != null) ...[
+                    const SizedBox(height: 8),
+                    TextButton.icon(
+                      style: TextButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        padding: EdgeInsets.zero,
+                        foregroundColor: scheme.primary,
+                      ),
+                      onPressed: () => onOpenClub(linkedClub!),
+                      icon: const Icon(Icons.storefront, size: 18),
+                      label: Text(
+                        'Наш клуб: ${linkedClub!.name}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

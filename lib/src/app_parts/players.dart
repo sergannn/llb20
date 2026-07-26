@@ -176,17 +176,43 @@ class _PlayersPageState extends State<_PlayersPage> {
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.only(bottom: 24),
         children: [
-          _AnimaHeaderBand(
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
             child: Column(
               children: [
-                _AnimaSearchField(
+                TextField(
                   controller: widget.searchController,
-                  label: 'Поиск игроков',
-                  hintText: widget.searchHint,
-                  value: widget.search,
                   onChanged: widget.onSearchChanged,
+                  decoration: InputDecoration(
+                    hintText: widget.searchHint,
+                    prefixIcon: const Icon(Icons.search, size: 26),
+                    suffixIcon: widget.search.isEmpty
+                        ? null
+                        : IconButton(
+                            tooltip: 'Очистить',
+                            icon: const Icon(Icons.close),
+                            onPressed: () {
+                              widget.searchController.clear();
+                              widget.onSearchChanged('');
+                            },
+                          ),
+                    filled: true,
+                    fillColor: Theme.of(context).colorScheme.surface,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(color: LlbAppTheme.border),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(color: LlbAppTheme.border),
+                    ),
+                  ),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 8),
                 _FilterChipsRow(
                   chips: [
                     _FilterChipData(
@@ -204,7 +230,6 @@ class _PlayersPageState extends State<_PlayersPage> {
               ],
             ),
           ),
-          const SizedBox(height: 14),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Column(
