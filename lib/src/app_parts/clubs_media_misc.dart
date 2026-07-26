@@ -1158,13 +1158,7 @@ class _LiveClubMapState extends State<_LiveClubMap> {
           width: selectedPoi == poi ? 40 : 32,
           height: selectedPoi == poi ? 40 : 32,
           child: GestureDetector(
-            onTap: () {
-              setState(() => this.selectedPoi = poi);
-              mapController.move(
-                LatLng(poi.point.latitude, poi.point.longitude),
-                mapController.camera.zoom < 13 ? 13 : mapController.camera.zoom,
-              );
-            },
+            onTap: () => setState(() => this.selectedPoi = poi),
             child: Tooltip(
               message: poi.name,
               child: DecoratedBox(
@@ -1190,6 +1184,25 @@ class _LiveClubMapState extends State<_LiveClubMap> {
                 ),
               ),
             ),
+          ),
+        ),
+      if (selectedPoi != null)
+        Marker(
+          point: LatLng(
+            selectedPoi.point.latitude,
+            selectedPoi.point.longitude,
+          ),
+          width: 260,
+          height: 142,
+          alignment: const Alignment(0, -1.35),
+          child: _MapFeaturePopup(
+            poi: selectedPoi,
+            linkedClub: _linkedClub(selectedPoi),
+            onClose: () => setState(() => this.selectedPoi = null),
+            onOpenClub: (club) {
+              setState(() => this.selectedPoi = null);
+              widget.onClubSelected(club);
+            },
           ),
         ),
       for (final item in widget.data.clubPoints)
@@ -1265,31 +1278,24 @@ class _LiveClubMapState extends State<_LiveClubMap> {
           left: 12,
           right: 12,
           bottom: 12,
-          child: selectedPoi == null
-              ? _MapSummaryCard(data: widget.data)
-              : _MapFeatureCard(
-                  poi: selectedPoi!,
-                  linkedClub: _linkedClub(selectedPoi!),
-                  onOpenClub: (club) {
-                    setState(() => selectedPoi = null);
-                    widget.onClubSelected(club);
-                  },
-                ),
+          child: _MapSummaryCard(data: widget.data),
         ),
       ],
     );
   }
 }
 
-class _MapFeatureCard extends StatelessWidget {
-  const _MapFeatureCard({
+class _MapFeaturePopup extends StatelessWidget {
+  const _MapFeaturePopup({
     required this.poi,
     required this.linkedClub,
+    required this.onClose,
     required this.onOpenClub,
   });
 
   final _PoiMapPoint poi;
   final ClubSummary? linkedClub;
+  final VoidCallback onClose;
   final ValueChanged<ClubSummary> onOpenClub;
 
   @override
@@ -1299,10 +1305,11 @@ class _MapFeatureCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: scheme.surface.withValues(alpha: 0.95),
         borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: scheme.outlineVariant),
         boxShadow: const [BoxShadow(color: Color(0x26000000), blurRadius: 12)],
       ),
       child: Padding(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.fromLTRB(10, 9, 6, 10),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1314,16 +1321,16 @@ class _MapFeatureCard extends StatelessWidget {
                 shape: BoxShape.circle,
               ),
               child: SizedBox(
-                width: 44,
-                height: 44,
+                width: 34,
+                height: 34,
                 child: Icon(
                   linkedClub == null ? Icons.info_outline : Icons.storefront,
                   color: Colors.white,
-                  size: 25,
+                  size: 20,
                 ),
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 9),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1333,7 +1340,7 @@ class _MapFeatureCard extends StatelessWidget {
                     poi.name,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
                       fontWeight: FontWeight.w900,
                     ),
                   ),
@@ -1349,7 +1356,7 @@ class _MapFeatureCard extends StatelessWidget {
                     ),
                   ],
                   if (linkedClub != null) ...[
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 6),
                     TextButton.icon(
                       style: TextButton.styleFrom(
                         visualDensity: VisualDensity.compact,
@@ -1367,6 +1374,14 @@ class _MapFeatureCard extends StatelessWidget {
                   ],
                 ],
               ),
+            ),
+            IconButton(
+              tooltip: 'Закрыть',
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints.tightFor(width: 28, height: 28),
+              onPressed: onClose,
+              icon: const Icon(Icons.close, size: 18),
             ),
           ],
         ),
