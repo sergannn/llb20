@@ -6,6 +6,7 @@ import re
 import time
 import urllib.parse
 import urllib.request
+import urllib.error
 from html.parser import HTMLParser
 
 
@@ -166,6 +167,7 @@ def import_clubs(args):
     pages = args.pages if args.pages is not None else last_page() + 1
     imported = 0
     skipped = 0
+    failed = 0
     seen = set()
     for page in range(args.start_page, args.start_page + pages):
         rows = parse_page(page)
@@ -187,12 +189,38 @@ def import_clubs(args):
             if lat is not None and lon is not None:
                 payload["latitude"] = lat
                 payload["longitude"] = lon
-            post_json(args.api_base.rstrip("/") + "/?resource=clubs", payload)
-            imported += 1
+            try:
+                post_json(args.api_base.rstrip("/") + "/?resource=clubs", payload)
+                imported += 1
+            except urllib.error.HTTPError as error:
+                failed += 1
+                body = error.read().decode("utf-8", errors="replace")
+                print(
+                    "failed "
+                    f"page={page} status={error.code} "
+                    f"club={row['name']!r} city={row['city']!r} body={body}",
+                    flush=True,
+                )
+            except Exception as error:
+                failed += 1
+                print(
+                    "failed "
+                    f"page={page} club={row['name']!r} "
+                    f"city={row['city']!r} error={error}",
+                    flush=True,
+                )
             if args.sleep > 0:
                 time.sleep(args.sleep)
-        print(f"page={page} imported={imported} skipped={skipped}", flush=True)
-    print(json.dumps({"imported": imported, "skipped": skipped}, ensure_ascii=False))
+        print(
+            f"page={page} imported={imported} skipped={skipped} failed={failed}",
+            flush=True,
+        )
+    print(
+        json.dumps(
+            {"imported": imported, "skipped": skipped, "failed": failed},
+            ensure_ascii=False,
+        )
+    )
 
 
 def main():
