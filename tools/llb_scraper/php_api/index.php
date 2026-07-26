@@ -1639,9 +1639,15 @@ try {
                 ':created_by' => $createdBy,
                 ':request_ip' => $_SERVER['REMOTE_ADDR'] ?? null,
             ]);
-            $stmt = $pdo->prepare('SELECT c.*,
-                                          (SELECT COUNT(*) FROM tournaments t WHERE t.club = c.name AND JSON_UNQUOTE(JSON_EXTRACT(t.detail_json, "$.city")) = c.city) AS tournaments_count
+            $stmt = $pdo->prepare('SELECT c.*, COALESCE(tc.tournaments_count, 0) AS tournaments_count
                                    FROM clubs c
+                                   LEFT JOIN (
+                                       SELECT club,
+                                              JSON_UNQUOTE(JSON_EXTRACT(detail_json, "$.city")) AS city,
+                                              COUNT(*) AS tournaments_count
+                                       FROM tournaments
+                                       GROUP BY club, city
+                                   ) tc ON tc.club = c.name AND tc.city = c.city
                                    WHERE c.city = :city AND c.name = :name
                                    LIMIT 1');
             $stmt->execute([':city' => $city, ':name' => $name]);
@@ -1662,9 +1668,15 @@ try {
             $where[] = '(c.name LIKE :q OR c.city LIKE :q OR c.address LIKE :q)';
             $params[':q'] = '%' . $q . '%';
         }
-        $sql = 'SELECT c.*,
-                       (SELECT COUNT(*) FROM tournaments t WHERE t.club = c.name AND JSON_UNQUOTE(JSON_EXTRACT(t.detail_json, "$.city")) = c.city) AS tournaments_count
-                FROM clubs c';
+        $sql = 'SELECT c.*, COALESCE(tc.tournaments_count, 0) AS tournaments_count
+                FROM clubs c
+                LEFT JOIN (
+                    SELECT club,
+                           JSON_UNQUOTE(JSON_EXTRACT(detail_json, "$.city")) AS city,
+                           COUNT(*) AS tournaments_count
+                    FROM tournaments
+                    GROUP BY club, city
+                ) tc ON tc.club = c.name AND tc.city = c.city';
         if ($where) {
             $sql .= ' WHERE ' . implode(' AND ', $where);
         }
