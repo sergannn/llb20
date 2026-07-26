@@ -20,12 +20,12 @@ platform :ios do
     latest = latest_testflight_build_number(
       api_key: api_key,
       app_identifier: "com.ser.tan.example",
-      version: "1.0.4",
+      version: "1.0.5",
       initial_build_number: 0
     )
 
     increment_version_number(
-      version_number: "1.0.4",
+      version_number: "1.0.5",
       xcodeproj: "Runner.xcodeproj"
     )
     increment_build_number(
@@ -60,8 +60,8 @@ platform :ios do
     deliver(
       api_key: api_key,
       app_identifier: "com.ser.tan.example",
-      app_version: "1.0.4",
-      build_number: "3",
+      app_version: "1.0.5",
+      build_number: "1",
       metadata_path: "fastlane/metadata",
       screenshots_path: "fastlane/screenshots",
       skip_binary_upload: true,
